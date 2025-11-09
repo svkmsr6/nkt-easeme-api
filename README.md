@@ -72,6 +72,26 @@ uvicorn app.main:app --reload
 
 Pass Supabase JWT in `Authorization: Bearer <token>` for all endpoints except `/health`.
 
+## cURL (admin create user + sign-in)
+
+Create a user (admin API) — replace `<PROJECT>` and `<SERVICE_ROLE_KEY>`:
+```bash
+curl -s -X POST "https://<PROJECT>.supabase.co/auth/v1/admin/users" \
+	-H "Authorization: Bearer <SERVICE_ROLE_KEY>" \
+	-H "Content-Type: application/json" \
+	-d '{"email":"new@user.test","password":"P@ssw0rd!","email_confirm":true}'
+```
+
+Sign in to get an access token (JWT) — replace `<PROJECT>` and `<ANON_KEY>`:
+```bash
+curl -s -X POST "https://<PROJECT>.supabase.co/auth/v1/token" \
+	-H "apikey: <ANON_KEY>" \
+	-H "Content-Type: application/json" \
+	-d '{"grant_type":"password","email":"new@user.test","password":"P@ssw0rd!"}'
+```
+
+Response contains `access_token` (the JWT).
+
 ## Endpoints
 
 ### Health Check
