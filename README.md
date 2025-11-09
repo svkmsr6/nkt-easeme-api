@@ -15,6 +15,26 @@ cp .env.example .env
 # Fill DATABASE_URL, SUPABASE_JWKS_URL, JWT_ISSUER, OPENAI_API_KEY
 ```
 
+### Important: DATABASE_URL format for async SQLAlchemy
+
+This project uses SQLAlchemy's asyncio engine. Your `DATABASE_URL` must use an async
+Postgres driver (asyncpg) in order for the async engine to initialize correctly.
+
+Example (recommended):
+
+```env
+# Use the asyncpg driver for SQLAlchemy asyncio
+DATABASE_URL="postgresql+asyncpg://<user>:<password>@<host>:5432/<database>"
+SUPABASE_JWKS_URL="https://<your-supabase-project>.supabase.co/auth/v1/.well-known/jwks.json"
+JWT_ISSUER="https://<your-supabase-project>.supabase.co"
+OPENAI_API_KEY="sk-..."
+```
+
+If you set `DATABASE_URL` to a plain `postgresql://...` the app will attempt to
+rewrite it to use `+asyncpg` at runtime, but it's best to explicitly provide
+the `+asyncpg` scheme so environments and deployment scripts are unambiguous.
+
+
 ### 2. Python Environment Setup
 ```powershell
 # Create and activate virtual environment

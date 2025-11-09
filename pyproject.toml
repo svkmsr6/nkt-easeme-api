@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "nkt-easeme-api"
 version = "0.1.0"
@@ -13,10 +17,14 @@ dependencies = [
   "python-jose[cryptography]>=3.3",
   "SQLAlchemy>=2.0",
   "asyncpg>=0.29",
+  "psycopg2-binary>=2.9",
   "alembic>=1.13",
   "orjson>=3.10",
   "tenacity>=9.0",
 ]
+
+[tool.setuptools]
+packages = ["app"]
 
 [tool.uvicorn]
 factory = true
