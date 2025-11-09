@@ -15,7 +15,29 @@ cp .env.example .env
 # Fill DATABASE_URL, SUPABASE_JWKS_URL, JWT_ISSUER, OPENAI_API_KEY
 ```
 
-### 2. Database Initialization
+### 2. Python Environment Setup
+```powershell
+# Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Upgrade pip for PEP 517 support
+python -m pip install --upgrade pip
+
+# Install project dependencies (in editable mode)
+python -m pip install -e .
+
+# Optional: If project has dev dependencies
+python -m pip install -e ".[dev]"
+```
+
+If using Poetry (check pyproject.toml for [tool.poetry]):
+```powershell
+pip install --user poetry
+poetry install
+```
+
+### 3. Database Initialization
 ```bash
 psql "$DATABASE_URL" -f migrations/0001_init.sql
 # (Optional) python -m app.db.init_db
