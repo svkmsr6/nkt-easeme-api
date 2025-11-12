@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.db.models import InterventionSession, Task, CheckIn
+from sqlalchemy import select
+from app.db.models import InterventionSession, Task
 from uuid import UUID
 from datetime import datetime, timedelta
 
@@ -37,25 +37,37 @@ async def set_checkin_minutes(db: AsyncSession, session: InterventionSession, mi
     return session.scheduled_checkin_at
 
 async def get_recent_sessions(db: AsyncSession, user_id: UUID, limit: int = 5):
-    q = select(InterventionSession).where(InterventionSession.user_id==user_id).order_by(InterventionSession.created_at.desc()).limit(limit)
+    from sqlalchemy.orm import joinedload
+    q = (
+        select(InterventionSession)
+        .options(joinedload(InterventionSession.task))
+        .where(InterventionSession.user_id==user_id)
+        .order_by(InterventionSession.created_at.desc())
+        .limit(limit)
+    )
     res = await db.execute(q)
     return list(res.scalars())
 
 async def get_pending_checkin(db: AsyncSession, user_id: UUID):
     q = (
         select(InterventionSession)
-        .where(InterventionSession.user_id==user_id, InterventionSession.scheduled_checkin_at.is_not(None))
+        .where(
+            InterventionSession.user_id==user_id, 
+            InterventionSession.scheduled_checkin_at.is_not(None),
+            InterventionSession.scheduled_checkin_at <= datetime.utcnow()
+        )
         .order_by(InterventionSession.scheduled_checkin_at.asc())
     )
     res = await db.execute(q)
     sessions = list(res.scalars())
+    
+    # Check if any session has no checkins
     for s in sessions:
-        # pending if scheduled passed and no checkin exists
-        if s.scheduled_checkin_at and s.checkins == [] and s.scheduled_checkin_at <= func.now():
+        if not s.checkins:  # No checkins yet
             return s
     return None
 
-async def session_detail(db: AsyncSession, s: InterventionSession):
+async def session_detail(s: InterventionSession):
     chk = None
     if s.checkins:
         ci = s.checkins[-1]

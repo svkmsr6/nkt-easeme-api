@@ -1,4 +1,4 @@
-import os, json, logging
+import json, logging
 import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 from app.core.config import settings
@@ -41,7 +41,7 @@ FALLBACKS = {
   },
 }
 
-@retry(stop=stop_after_attempt(2), wait=wait_fixed(0.5))
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
 async def choose_intervention(payload: dict) -> dict:
     """
     Returns: dict(pattern, technique_id, message, duration_seconds)
@@ -62,17 +62,29 @@ async def choose_intervention(payload: dict) -> dict:
       "response_format": {"type": "json_object"},
     }
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-      r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
-      r.raise_for_status()
-      data = r.json()
-      raw = data["choices"][0]["message"]["content"]
-      parsed = json.loads(raw)
-      pattern = parsed.get("pattern") or "anxiety_dread"
-      tech = parsed.get("technique_id") or FALLBACKS[pattern]["technique_id"]
-      msg = parsed.get("message") or FALLBACKS[pattern]["message"]
-      dur = int(parsed.get("duration_seconds") or FALLBACKS[pattern]["duration_seconds"])
-      return {"pattern": pattern, "technique_id": tech, "message": msg, "duration_seconds": dur}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            raw = data["choices"][0]["message"]["content"]
+            parsed = json.loads(raw)
+            pattern = parsed.get("pattern") or "anxiety_dread"
+            tech = parsed.get("technique_id") or FALLBACKS[pattern]["technique_id"]
+            msg = parsed.get("message") or FALLBACKS[pattern]["message"]
+            dur = int(parsed.get("duration_seconds") or FALLBACKS[pattern]["duration_seconds"])
+            return {"pattern": pattern, "technique_id": tech, "message": msg, "duration_seconds": dur}
+    except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError, KeyError, ValueError) as e:
+        log.error("OpenAI API error, using fallback: %s", e)
+        # Use anxiety_dread as default fallback
+        fallback = FALLBACKS["anxiety_dread"]
+        return {
+            "pattern": "anxiety_dread",
+            "technique_id": fallback["technique_id"], 
+            "message": fallback["message"],
+            "duration_seconds": fallback["duration_seconds"]
+        }
 
 async def emotion_labels(payload: dict) -> list[str]:
     """Lightweight label suggestions (2-3 options)."""
@@ -91,13 +103,13 @@ async def emotion_labels(payload: dict) -> list[str]:
     }
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
     async with httpx.AsyncClient(timeout=10.0) as client:
-      try:
-        r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-        parsed = json.loads(data["choices"][0]["message"]["content"])
-        opts = parsed.get("emotion_options") or parsed.get("labels") or []
-        return [o for o in opts][:3] or ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
-      except Exception as e:
-        log.warning("Emotion label fallback: %s", e)
-        return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        try:
+            r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            parsed = json.loads(data["choices"][0]["message"]["content"])
+            opts = parsed.get("emotion_options") or parsed.get("labels") or []
+            return [o for o in opts][:3] or ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError, KeyError) as e:
+            log.warning("Emotion label fallback: %s", e)
+            return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
