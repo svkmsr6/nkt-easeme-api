@@ -8,7 +8,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: AnyUrl
 
+    SUPABASE_URL: str
+    SUPABASE_ANON_KEY: str
     SUPABASE_JWKS_URL: str
+    SUPABASE_JWT_SECRET: str | None = None
     JWT_AUDIENCE: str = "authenticated"
     JWT_ISSUER: str
 

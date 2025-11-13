@@ -13,33 +13,39 @@ router = APIRouter(prefix="/api/interventions", tags=["interventions"])
 @router.post("", response_model=InterventionOut, status_code=201)
 async def create_intervention(payload: InterventionCreate, ctx=Depends(Authed)):
     db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
-    task = await get_task_owned(db, user_id, payload.task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found or doesn't belong to user")
-    # AI
-    ai = await choose_intervention({
-        "task_description": task.task_description,
-        "physical_sensation": payload.physical_sensation,
-        "internal_narrative": payload.internal_narrative,
-        "emotion_label": payload.emotion_label,
-    })
-    s = await create_session(db, user_id, task, {
-        "physical_sensation": payload.physical_sensation,
-        "internal_narrative": payload.internal_narrative,
-        "emotion_label": payload.emotion_label,
-        "ai_identified_pattern": ai["pattern"],
-        "technique_id": ai["technique_id"],
-        "personalized_message": ai["message"],
-        "duration_seconds": ai["duration_seconds"],
-    })
-    return {
-        "id": s.id,
-        "ai_identified_pattern": s.ai_identified_pattern,
-        "technique_id": s.technique_id,
-        "personalized_message": s.personalized_message,
-        "intervention_type": s.intervention_type or "timer",
-        "intervention_duration_seconds": s.intervention_duration_seconds or 60
-    }
+    try:
+        task = await get_task_owned(db, user_id, payload.task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found or doesn't belong to user")
+        # AI
+        ai = await choose_intervention({
+            "task_description": task.task_description,
+            "physical_sensation": payload.physical_sensation,
+            "internal_narrative": payload.internal_narrative,
+            "emotion_label": payload.emotion_label,
+        })
+        s = await create_session(db, user_id, task, {
+            "physical_sensation": payload.physical_sensation,
+            "internal_narrative": payload.internal_narrative,
+            "emotion_label": payload.emotion_label,
+            "ai_identified_pattern": ai["pattern"],
+            "technique_id": ai["technique_id"],
+            "personalized_message": ai["message"],
+            "duration_seconds": ai["duration_seconds"],
+        })
+        return {
+            "id": s.id,
+            "ai_identified_pattern": s.ai_identified_pattern,
+            "technique_id": s.technique_id,
+            "personalized_message": s.personalized_message,
+            "intervention_duration_seconds": s.intervention_duration_seconds or 60
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Error creating intervention: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 @router.post("/{session_id}/start", response_model=StartSessionOut)
 async def start_session(session_id: UUID = Path(...), payload: StartSessionIn | None = None, ctx=Depends(Authed)):
@@ -63,4 +69,4 @@ async def get_detail(session_id: UUID, ctx=Depends(Authed)):
     db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
     s = await get_session_owned(db, user_id, session_id)
     if not s: raise HTTPException(status_code=404, detail="Session not found or doesn't belong to user")
-    return await session_detail(db, s)
+    return await session_detail(s)

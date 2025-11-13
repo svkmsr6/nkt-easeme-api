@@ -13,7 +13,6 @@ class InterventionOut(BaseModel):
     ai_identified_pattern: str
     technique_id: str
     personalized_message: str
-    intervention_type: str
     intervention_duration_seconds: int
 
 class StartSessionIn(BaseModel):
@@ -26,6 +25,7 @@ class StartSessionOut(BaseModel):
 class CheckinTimePatchIn(BaseModel):
     checkin_minutes: int
     @field_validator("checkin_minutes")
+    @classmethod
     def _bounds(cls, v):
         if v < 15 or v > 120:
             raise ValueError("checkin_minutes must be between 15 and 120")

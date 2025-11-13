@@ -16,4 +16,7 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSe
 
 async def get_db():
     async with SessionLocal() as session:
+        # Set the search_path to use the app schema by default
+        from sqlalchemy import text
+        await session.execute(text("SET search_path TO app, public"))
         yield session
