@@ -32,10 +32,9 @@ class InterventionSession(Base):
     ai_identified_pattern: Mapped[Optional[str]]
     technique_id: Mapped[Optional[str]]
     personalized_message: Mapped[Optional[str]]
-    intervention_type: Mapped[Optional[str]]
     intervention_duration_seconds: Mapped[Optional[int]]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
-    started_at: Mapped[Optional[datetime]]
+    intervention_started_at: Mapped[Optional[datetime]]
     scheduled_checkin_at: Mapped[Optional[datetime]]
     checkins: Mapped[List["CheckIn"]] = relationship(back_populates="session", cascade="all, delete")
 

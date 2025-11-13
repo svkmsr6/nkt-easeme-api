@@ -38,7 +38,6 @@ async def create_intervention(payload: InterventionCreate, ctx=Depends(Authed)):
             "ai_identified_pattern": s.ai_identified_pattern,
             "technique_id": s.technique_id,
             "personalized_message": s.personalized_message,
-            "intervention_type": s.intervention_type or "timer",
             "intervention_duration_seconds": s.intervention_duration_seconds or 60
         }
     except HTTPException:
@@ -70,4 +69,4 @@ async def get_detail(session_id: UUID, ctx=Depends(Authed)):
     db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
     s = await get_session_owned(db, user_id, session_id)
     if not s: raise HTTPException(status_code=404, detail="Session not found or doesn't belong to user")
-    return await session_detail(db, s)
+    return await session_detail(s)
