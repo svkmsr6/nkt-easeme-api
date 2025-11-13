@@ -38,15 +38,66 @@ async def set_checkin_minutes(db: AsyncSession, session: InterventionSession, mi
 
 async def get_recent_sessions(db: AsyncSession, user_id: UUID, limit: int = 5):
     from sqlalchemy.orm import joinedload
-    q = (
-        select(InterventionSession)
-        .options(joinedload(InterventionSession.task))
-        .where(InterventionSession.user_id==user_id)
-        .order_by(InterventionSession.created_at.desc())
-        .limit(limit)
-    )
-    res = await db.execute(q)
-    return list(res.scalars())
+    from sqlalchemy.exc import ProgrammingError
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        q = (
+            select(InterventionSession)
+            .options(joinedload(InterventionSession.task))
+            .where(InterventionSession.user_id==user_id)
+            .order_by(InterventionSession.created_at.desc())
+            .limit(limit)
+        )
+        res = await db.execute(q)
+        return list(res.scalars())
+    except ProgrammingError as e:
+        # Check if this is a column not found error
+        if "intervention_type" in str(e) and "does not exist" in str(e):
+            logger.warning(f"Column 'intervention_type' not found in database, falling back to basic query")
+            # Try a more basic query without the problematic column
+            try:
+                # Select only the columns we know exist
+                basic_q = (
+                    select(InterventionSession.id, 
+                           InterventionSession.user_id,
+                           InterventionSession.task_id,
+                           InterventionSession.created_at,
+                           InterventionSession.technique_id)
+                    .where(InterventionSession.user_id==user_id)
+                    .order_by(InterventionSession.created_at.desc())
+                    .limit(limit)
+                )
+                basic_res = await db.execute(basic_q)
+                
+                # Manually construct InterventionSession-like objects
+                sessions = []
+                for row in basic_res:
+                    # Get the task separately
+                    task_q = select(Task).where(Task.id == row.task_id)
+                    task_res = await db.execute(task_q)
+                    task = task_res.scalar_one_or_none()
+                    
+                    # Create a minimal session object
+                    session = type('Session', (), {
+                        'id': row.id,
+                        'user_id': row.user_id,
+                        'task_id': row.task_id,
+                        'created_at': row.created_at,
+                        'technique_id': row.technique_id,
+                        'task': task
+                    })()
+                    sessions.append(session)
+                
+                return sessions
+            except Exception as fallback_e:
+                logger.error(f"Fallback query also failed: {fallback_e}")
+                return []
+        else:
+            # Re-raise other ProgrammingErrors
+            raise
 
 async def get_pending_checkin(db: AsyncSession, user_id: UUID):
     q = (
