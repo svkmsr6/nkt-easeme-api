@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.db.models import CheckIn, Task, InterventionSession
 from uuid import UUID
 
@@ -15,8 +15,10 @@ async def create_checkin(db: AsyncSession, user_id: UUID, session: InterventionS
     db.add(ci)
     # update last_worked_on if started
     if outcome in ("started_kept_going","started_stopped","still_working"):
-        res = await db.execute(select(Task).where(Task.id==session.task_id))
-        task = res.scalar_one()
-        task.last_worked_on = ci.created_at
+        # Use direct SQL update to avoid potential type casting issues
+        await db.execute(
+            text("UPDATE app.tasks SET last_worked_on = NOW() WHERE id = :task_id"),
+            {"task_id": session.task_id}
+        )
     await db.commit(); await db.refresh(ci)
     return ci, SUGGESTIONS[outcome]
