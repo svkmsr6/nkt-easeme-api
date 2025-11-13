@@ -64,7 +64,9 @@ async def choose_intervention(payload: dict) -> dict:
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Use same timeout configuration as emotion_labels - 5 minutes
+        timeout_config = httpx.Timeout(connect=30.0, read=280.0, write=15.0, pool=300.0)
+        async with httpx.AsyncClient(timeout=timeout_config) as client:
             r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
             r.raise_for_status()
             data = r.json()
@@ -86,6 +88,7 @@ async def choose_intervention(payload: dict) -> dict:
             "duration_seconds": fallback["duration_seconds"]
         }
 
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
 async def emotion_labels(payload: dict) -> list[str]:
     """Lightweight label suggestions (2-3 options)."""
     prompt = (
@@ -93,7 +96,7 @@ async def emotion_labels(payload: dict) -> list[str]:
       f"- physical_sensation: {payload['physical_sensation']}\n"
       f"- internal_narrative: {payload['internal_narrative']}\n"
       f"- task: {payload['task_description']}\n"
-      "Return as a JSON list of strings."
+      "Return ONLY a JSON object with this format: {\"labels\": [\"emotion1\", \"emotion2\", \"emotion3\"]}"
     )
     req = {
       "model": settings.OPENAI_MODEL,
@@ -102,7 +105,25 @@ async def emotion_labels(payload: dict) -> list[str]:
       "response_format": {"type":"json_object"}
     }
     headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    log.info(f"Making OpenAI emotion labels request with API key prefix: {settings.OPENAI_API_KEY[:12]}...")
+    log.info(f"Request timeout: 300.0s (5 minutes), model: {settings.OPENAI_MODEL}")
+    
+    # Configure timeout with more granular control - increased to 5 minutes
+    timeout_config = httpx.Timeout(
+        connect=30.0,   # Connection timeout - 30 seconds for slow networks
+        read=280.0,     # Read timeout - 280 seconds for API processing
+        write=15.0,     # Write timeout - 15 seconds for request upload
+        pool=300.0      # Total timeout - 300 seconds (5 minutes)
+    )
+    
+    # Configure client with retry-friendly settings
+    client_config = {
+        "timeout": timeout_config,
+        "follow_redirects": True,
+        "verify": True  # Ensure SSL verification
+    }
+    
+    async with httpx.AsyncClient(**client_config) as client:
         try:
             r = await client.post("https://api.openai.com/v1/chat/completions", json=req, headers=headers)
             r.raise_for_status()
@@ -110,6 +131,21 @@ async def emotion_labels(payload: dict) -> list[str]:
             parsed = json.loads(data["choices"][0]["message"]["content"])
             opts = parsed.get("emotion_options") or parsed.get("labels") or []
             return [o for o in opts][:3] or ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
-        except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError, KeyError) as e:
-            log.warning("Emotion label fallback: %s", e)
+        except httpx.TimeoutException as e:
+            log.warning(f"OpenAI API timeout after {timeout_config.pool}s: {e}")
+            log.error("Consider checking network connectivity or OpenAI API status")
+            return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        except httpx.ConnectError as e:
+            log.warning(f"OpenAI API connection error: {e}")
+            log.error("Unable to connect to OpenAI API - check network/firewall")
+            return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        except httpx.HTTPStatusError as e:
+            log.warning(f"OpenAI API HTTP error: {e.response.status_code}")
+            log.error(f"Response body: {e.response.text}")
+            return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        except (json.JSONDecodeError, KeyError) as e:
+            log.warning(f"OpenAI API response parsing error: {e}")
+            return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
+        except Exception as e:
+            log.warning(f"Unexpected error calling OpenAI API: {type(e).__name__}: {e}")
             return ["Fear of judgment","Perfectionism anxiety","Performance pressure"]
