@@ -23,6 +23,15 @@ dependencies = [
   "tenacity>=9.0",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "pytest-mock>=3.14",
+  "faker>=30.8",
+]
+
 [tool.setuptools]
 packages = ["app"]
 
