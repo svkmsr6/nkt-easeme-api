@@ -2,7 +2,7 @@
 Unit tests for app.main module and error handlers.
 """
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, Mock
 from fastapi import Request
 from sqlalchemy.exc import ProgrammingError, OperationalError, IntegrityError
 from app.main import create_app
@@ -71,6 +71,64 @@ class TestExceptionHandlers:
         assert ProgrammingError in app.exception_handlers
         assert OperationalError in app.exception_handlers
         assert IntegrityError in app.exception_handlers
+    
+    @pytest.mark.asyncio
+    async def test_programming_error_schema_mismatch(self):
+        """Test ProgrammingError handler for schema mismatch."""
+        app = create_app()
+        handler = app.exception_handlers[ProgrammingError]
+        
+        request = Mock(spec=Request)
+        exc = ProgrammingError("column does not exist", None, None)
+        
+        response = await handler(request, exc)
+        
+        assert response.status_code == 503
+        content = response.body.decode()
+        assert "schema" in content.lower() or "mismatch" in content.lower()
+    
+    @pytest.mark.asyncio
+    async def test_programming_error_generic(self):
+        """Test ProgrammingError handler for generic errors."""
+        app = create_app()
+        handler = app.exception_handlers[ProgrammingError]
+        
+        request = Mock(spec=Request)
+        exc = ProgrammingError("some other error", None, None)
+        
+        response = await handler(request, exc)
+        
+        assert response.status_code == 500
+    
+    @pytest.mark.asyncio
+    async def test_operational_error_handler(self):
+        """Test OperationalError handler."""
+        app = create_app()
+        handler = app.exception_handlers[OperationalError]
+        
+        request = Mock(spec=Request)
+        exc = OperationalError("connection failed", None, None)
+        
+        response = await handler(request, exc)
+        
+        assert response.status_code == 503
+        content = response.body.decode()
+        assert "database" in content.lower() or "connection" in content.lower()
+    
+    @pytest.mark.asyncio
+    async def test_integrity_error_handler(self):
+        """Test IntegrityError handler."""
+        app = create_app()
+        handler = app.exception_handlers[IntegrityError]
+        
+        request = Mock(spec=Request)
+        exc = IntegrityError("constraint violation", None, None)
+        
+        response = await handler(request, exc)
+        
+        assert response.status_code == 400
+        content = response.body.decode()
+        assert "integrity" in content.lower() or "constraint" in content.lower()
 
 
 class TestAppModule:

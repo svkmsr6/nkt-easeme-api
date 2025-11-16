@@ -254,3 +254,49 @@ class TestEmotionLabels:
             result = await emotion_labels(payload)
             
             assert result == ["Nervous", "Worried", "Stressed"]
+    
+    @pytest.mark.asyncio
+    async def test_emotion_labels_http_error_uses_default(self):
+        """Test that HTTP errors return default labels."""
+        payload = {
+            "task_description": "Presentation",
+            "physical_sensation": "Racing heart",
+            "internal_narrative": "Everyone will judge me"
+        }
+        
+        with patch("httpx.AsyncClient.post") as mock_post:
+            from httpx import HTTPStatusError, Response, Request
+            mock_response = Response(status_code=500, text="Server error")
+            mock_response._request = Request("POST", "https://api.openai.com")
+            mock_post.side_effect = HTTPStatusError(
+                "Server error",
+                request=mock_response._request,
+                response=mock_response
+            )
+            
+            result = await emotion_labels(payload)
+            
+            # Should return default labels
+            assert isinstance(result, list)
+            assert len(result) == 3
+            assert "Fear of judgment" in result
+    
+    @pytest.mark.asyncio
+    async def test_emotion_labels_unexpected_exception_uses_default(self):
+        """Test that unexpected exceptions return default labels."""
+        payload = {
+            "task_description": "Presentation",
+            "physical_sensation": "Racing heart",
+            "internal_narrative": "Everyone will judge me"
+        }
+        
+        with patch("httpx.AsyncClient.post") as mock_post:
+            # Cause an unexpected exception
+            mock_post.side_effect = RuntimeError("Unexpected error")
+            
+            result = await emotion_labels(payload)
+            
+            # Should return default labels
+            assert isinstance(result, list)
+            assert len(result) == 3
+            assert "Fear of judgment" in result
