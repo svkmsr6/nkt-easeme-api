@@ -20,12 +20,21 @@ async def create_session(db: AsyncSession, user_id: UUID, task: Task, payload: d
     return s
 
 async def get_session_owned(db: AsyncSession, user_id: UUID, session_id: UUID) -> InterventionSession | None:
-    res = await db.execute(select(InterventionSession).where(InterventionSession.id==session_id, InterventionSession.user_id==user_id))
-    return res.scalar_one_or_none()
+    from sqlalchemy.orm import joinedload, selectinload
+    
+    q = (
+        select(InterventionSession)
+        .options(joinedload(InterventionSession.task), selectinload(InterventionSession.checkins))
+        .where(InterventionSession.id==session_id, InterventionSession.user_id==user_id)
+    )
+    res = await db.execute(q)
+    return res.unique().scalar_one_or_none()
 
 async def mark_started_and_schedule(db: AsyncSession, session: InterventionSession, started_at: datetime, minutes: int = 15):
-    session.intervention_started_at = started_at
-    session.scheduled_checkin_at = started_at + timedelta(minutes=minutes)
+    # Strip timezone info since DB columns are TIMESTAMP WITHOUT TIME ZONE
+    started_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
+    session.intervention_started_at = started_naive
+    session.scheduled_checkin_at = started_naive + timedelta(minutes=minutes)
     await db.commit(); await db.refresh(session)
     return session.scheduled_checkin_at
 
