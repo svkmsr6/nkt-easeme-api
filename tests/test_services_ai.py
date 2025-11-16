@@ -22,11 +22,12 @@ class TestChooseIntervention:
         }
         
         with patch("app.services.ai.httpx.AsyncClient.post") as mock_post:
-            # Create a proper mock response
-            mock_resp = AsyncMock()
+            # Create a mock response with proper sync json() method
+            from unittest.mock import Mock
+            mock_resp = Mock()
             mock_resp.status_code = 200
-            mock_resp.json = AsyncMock(return_value=mock_openai_response)
-            mock_resp.raise_for_status = AsyncMock()
+            mock_resp.json = Mock(return_value=mock_openai_response)  # Sync method
+            mock_resp.raise_for_status = Mock()
             mock_post.return_value = mock_resp
             
             result = await choose_intervention(payload)
@@ -94,12 +95,13 @@ class TestChooseIntervention:
         }
         
         with patch("app.services.ai.httpx.AsyncClient.post") as mock_post:
-            mock_response = AsyncMock()
-            # Return coroutine that resolves to dict with invalid JSON content
-            mock_response.json = AsyncMock(return_value={
+            from unittest.mock import Mock
+            mock_response = Mock()
+            # Return dict with invalid JSON content that will fail json.loads
+            mock_response.json = Mock(return_value={
                 "choices": [{"message": {"content": "not valid json"}}]
             })
-            mock_response.raise_for_status = AsyncMock()
+            mock_response.raise_for_status = Mock()
             mock_post.return_value = mock_response
             
             result = await choose_intervention(payload)
@@ -233,7 +235,7 @@ class TestEmotionLabels:
         }
         
         with patch("app.services.ai.httpx.AsyncClient.post") as mock_post:
-            mock_response = {
+            mock_response_data = {
                 "choices": [{
                     "message": {
                         "content": json.dumps({
@@ -242,10 +244,11 @@ class TestEmotionLabels:
                     }
                 }]
             }
-            mock_resp = AsyncMock()
+            from unittest.mock import Mock
+            mock_resp = Mock()
             mock_resp.status_code = 200
-            mock_resp.json = AsyncMock(return_value=mock_response)
-            mock_resp.raise_for_status = AsyncMock()
+            mock_resp.json = Mock(return_value=mock_response_data)
+            mock_resp.raise_for_status = Mock()
             mock_post.return_value = mock_resp
             
             result = await emotion_labels(payload)

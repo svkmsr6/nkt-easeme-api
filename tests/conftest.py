@@ -33,26 +33,29 @@ async def test_engine():
         echo=False
     )
     
-    # Create schema if not exists
+    # Create schema and tables once (if they don't exist)
     async with engine.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
         await conn.execute(text("SET search_path TO app, public"))
-        # Drop all tables to ensure clean state
-        await conn.run_sync(Base.metadata.drop_all)
-        # Create all tables
+        # Create a simple users table if foreign keys reference it
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app.users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email VARCHAR(255),
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc')
+            )
+        """))
+        # Create tables if they don't exist (idempotent)
         await conn.run_sync(Base.metadata.create_all)
     
     yield engine
     
-    # Cleanup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    
+    # No cleanup - keep schema for next test
     await engine.dispose()
 
 
 @pytest.fixture
-async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+async def db_session(test_engine, test_user_id) -> AsyncGenerator[AsyncSession, None]:
     """Create a new database session for a test."""
     SessionLocal = async_sessionmaker(
         test_engine,
@@ -63,8 +66,19 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     async with SessionLocal() as session:
         # Set search path
         await session.execute(text("SET search_path TO app, public"))
+        # Ensure test user exists (in a separate transaction)
+        await session.execute(
+            text("INSERT INTO app.users (id) VALUES (:user_id) ON CONFLICT (id) DO NOTHING"),
+            {"user_id": test_user_id}
+        )
+        await session.commit()
+        # Now start fresh transaction for test
         yield session
+        # Rollback any test changes
         await session.rollback()
+        # Clean up data from our tables after each test  
+        await session.execute(text("TRUNCATE TABLE app.checkins, app.intervention_sessions, app.tasks RESTART IDENTITY CASCADE"))
+        await session.commit()
 
 
 @pytest.fixture

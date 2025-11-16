@@ -10,25 +10,24 @@ from app.db.models import Task, InterventionSession, CheckIn
 class TestTaskModel:
     """Test Task model."""
     
-    async def test_task_creation(self, db_session):
+    async def test_task_creation(self, db_session, test_user_id):
         """Test creating a Task instance."""
-        user_id = uuid.uuid4()
         task = Task(
-            user_id=user_id,
+            user_id=test_user_id,
             task_description="Test task"
         )
         db_session.add(task)
         await db_session.flush()  # Flush to generate ID
         
-        assert task.user_id == user_id
+        assert task.user_id == test_user_id
         assert task.task_description == "Test task"
         assert task.id is not None  # UUID should be generated
         assert isinstance(task.id, uuid.UUID)
     
-    async def test_task_defaults(self, db_session):
+    async def test_task_defaults(self, db_session, test_user_id):
         """Test Task default values."""
         task = Task(
-            user_id=uuid.uuid4(),
+            user_id=test_user_id,
             task_description="Test"
         )
         db_session.add(task)
