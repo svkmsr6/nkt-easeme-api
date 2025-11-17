@@ -71,7 +71,7 @@ async def create_checkin(
     scheduled_iso: Optional[str] = None
 
     if auto_schedule_next:
-        next_at = schedule_checkin(session.started_at or session.created_at, rec_minutes)
+        next_at = schedule_checkin(session.intervention_started_at or session.created_at, rec_minutes)
         # Persist the scheduled_next time onto the session for the product to surface later
         session.scheduled_checkin_at = next_at
         await db.commit()

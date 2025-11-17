@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, cast, String
 from app.db.models import Task
 from uuid import UUID
 
@@ -17,7 +17,8 @@ async def get_task_owned(db: AsyncSession, user_id: UUID, task_id: UUID) -> Task
 async def list_tasks(db: AsyncSession, user_id: UUID, status: str | None, limit: int = 20):
     stmt = select(Task).where(Task.user_id == user_id)
     if status:
-        stmt = stmt.where(Task.status == status)
+        # Use explicit casting to handle potential type mismatches
+        stmt = stmt.where(cast(Task.status, String) == cast(status, String))
     stmt = stmt.order_by(Task.created_at.desc()).limit(limit)
     res = await db.execute(stmt)
     return list(res.scalars())
