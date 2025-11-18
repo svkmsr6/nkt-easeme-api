@@ -79,35 +79,127 @@ async def health_debug():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+@router.get("/health/database")
+async def health_database():
+    """Detailed database connectivity test"""
+    import asyncio
+    from urllib.parse import urlparse
+    from app.core.config import settings
+    
+    result = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "tests": {}
+    }
+    
+    # Parse database URL
+    try:
+        parsed_url = urlparse(str(settings.DATABASE_URL))
+        host = parsed_url.hostname
+        port = parsed_url.port or 5432
+        
+        result["database_config"] = {
+            "host": host,
+            "port": port,
+            "scheme": parsed_url.scheme
+        }
+    except Exception as e:
+        result["database_config"] = {"error": str(e)}
+        return result
+    
+    # Test DNS resolution for database host
+    try:
+        import socket
+        ip = socket.gethostbyname(host)
+        result["tests"]["dns_resolution"] = {"status": "success", "ip": ip}
+    except Exception as e:
+        result["tests"]["dns_resolution"] = {"status": "failed", "error": str(e)}
+    
+    # Test TCP connectivity to database port
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        result_code = sock.connect_ex((host, port))
+        sock.close()
+        
+        if result_code == 0:
+            result["tests"]["tcp_connectivity"] = {"status": "success", "port_open": True}
+        else:
+            result["tests"]["tcp_connectivity"] = {
+                "status": "failed", 
+                "port_open": False,
+                "error_code": result_code
+            }
+    except Exception as e:
+        result["tests"]["tcp_connectivity"] = {"status": "failed", "error": str(e)}
+    
+    # Test actual database connection
+    try:
+        from app.db.session import engine
+        async with engine.begin() as conn:
+            db_result = await conn.execute(text("SELECT version()"))
+            version = db_result.scalar()
+            result["tests"]["database_connection"] = {
+                "status": "success",
+                "postgres_version": version[:50] if version else "unknown"
+            }
+    except Exception as e:
+        result["tests"]["database_connection"] = {"status": "failed", "error": str(e)}
+    
+    return result
+
 @router.get("/health/network")
 async def health_network():
     """Test network connectivity to various endpoints"""
     import asyncio
     import socket
     import httpx
+    from urllib.parse import urlparse
+    from app.core.config import settings
     
     results = {}
     
-    # Test DNS resolution
+    # Get the actual database hostname from settings
     try:
-        import socket
-        host = "db.trjevaajfqwleetrmncz.supabase.co"
-        ip = socket.gethostbyname(host)
-        results["dns_resolution"] = {"status": "success", "ip": ip}
+        parsed_url = urlparse(str(settings.DATABASE_URL))
+        db_host = parsed_url.hostname
+        supabase_project = db_host.split('.')[0] if db_host else None
+        results["database_config"] = {
+            "hostname": db_host,
+            "project_id": supabase_project
+        }
     except Exception as e:
-        results["dns_resolution"] = {"status": "failed", "error": str(e)}
+        results["database_config"] = {"error": str(e)}
+        db_host = None
+        supabase_project = None
     
-    # Test HTTP connectivity to Supabase
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get("https://trjevaajfqwleetrmncz.supabase.co")
+    # Test DNS resolution for actual database host
+    if db_host:
+        try:
+            ip = socket.gethostbyname(db_host)
+            results["dns_resolution"] = {"status": "success", "ip": ip, "hostname": db_host}
+        except Exception as e:
+            results["dns_resolution"] = {"status": "failed", "error": str(e), "hostname": db_host}
+    else:
+        results["dns_resolution"] = {"status": "failed", "error": "Could not extract hostname from DATABASE_URL"}
+    
+    # Test HTTP connectivity to Supabase project
+    if supabase_project:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(f"https://{supabase_project}.supabase.co")
+                results["supabase_http"] = {
+                    "status": "success", 
+                    "status_code": response.status_code,
+                    "reachable": True,
+                    "url": f"https://{supabase_project}.supabase.co"
+                }
+        except Exception as e:
             results["supabase_http"] = {
-                "status": "success", 
-                "status_code": response.status_code,
-                "reachable": True
+                "status": "failed", 
+                "error": str(e),
+                "url": f"https://{supabase_project}.supabase.co"
             }
-    except Exception as e:
-        results["supabase_http"] = {"status": "failed", "error": str(e)}
     
     # Test external connectivity
     try:

@@ -69,21 +69,51 @@ except Exception as e:
     # Fallback: use original URL if parsing fails
     logger.info(f"Using original DATABASE_URL: {_db_url[:50]}...")
 
-# Simple engine configuration
+# Simple engine configuration with better error handling
 engine = create_async_engine(
     _db_url,
     pool_pre_ping=True,
+    pool_recycle=3600,  # Recycle connections every hour
+    pool_timeout=30,    # Wait up to 30 seconds for a connection
+    max_overflow=10,    # Allow up to 10 connections beyond pool_size
     echo=False,
+    connect_args={
+        "command_timeout": 30,  # Set command timeout directly
+        "server_settings": {
+            "application_name": "nkt-easeme-api",
+        }
+    } if "postgresql+asyncpg" in _db_url else {}
 )
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 async def get_db():
     """
-    Dependency that provides a database session.
+    Dependency that provides a database session with retry logic.
     """
-    async with SessionLocal() as session:
-        # Set the search_path to use the app schema by default
-        from sqlalchemy import text
-        await session.execute(text("SET search_path TO app, public"))
-        yield session
+    import asyncio
+    
+    max_retries = 3
+    retry_delay = 1  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            async with SessionLocal() as session:
+                # Set the search_path to use the app schema by default
+                from sqlalchemy import text
+                await session.execute(text("SET search_path TO app, public"))
+                yield session
+                return  # Success, exit the retry loop
+                
+        except OSError as e:
+            if "Network is unreachable" in str(e) and attempt < max_retries - 1:
+                logger.warning(f"Network unreachable, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            else:
+                logger.error(f"Database connection failed after {attempt + 1} attempts: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
+            raise
