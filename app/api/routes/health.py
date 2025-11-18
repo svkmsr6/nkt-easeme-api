@@ -48,22 +48,80 @@ async def health_simple():
 @router.get("/health/debug")
 async def health_debug():
     """Debug endpoint to check database URL configuration"""
-    db_url = str(settings.DATABASE_URL)
-    # Mask password for security
-    if '@' in db_url:
-        parts = db_url.split('@')
-        user_pass = parts[0].split('://')[-1]
-        if ':' in user_pass:
-            user, password = user_pass.split(':', 1)
-            masked_url = db_url.replace(password, '***')
-        else:
-            masked_url = db_url
-    else:
-        masked_url = db_url
+    from app.db import session as db_session
+    
+    # Get the original URL from settings
+    original_url = str(settings.DATABASE_URL)
+    
+    # Try to get the cleaned URL that's actually being used
+    # This requires accessing the engine's URL
+    try:
+        engine_url = str(db_session.engine.url)
+    except:
+        engine_url = "Unable to retrieve engine URL"
+    
+    # Mask passwords for security
+    def mask_password(url):
+        if '@' in url:
+            parts = url.split('@')
+            user_pass = parts[0].split('://')[-1]
+            if ':' in user_pass:
+                user, password = user_pass.split(':', 1)
+                return url.replace(password, '***')
+        return url
     
     return {
-        "database_url": masked_url,
+        "original_database_url": mask_password(original_url),
+        "engine_database_url": mask_password(engine_url),
         "app_env": settings.APP_ENV,
         "render_service": os.environ.get("RENDER_SERVICE_NAME", "unknown"),
+        "render_region": os.environ.get("RENDER_REGION", "unknown"),
         "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+@router.get("/health/network")
+async def health_network():
+    """Test network connectivity to various endpoints"""
+    import asyncio
+    import socket
+    import httpx
+    
+    results = {}
+    
+    # Test DNS resolution
+    try:
+        import socket
+        host = "db.trjevaajfqwleetrmncz.supabase.co"
+        ip = socket.gethostbyname(host)
+        results["dns_resolution"] = {"status": "success", "ip": ip}
+    except Exception as e:
+        results["dns_resolution"] = {"status": "failed", "error": str(e)}
+    
+    # Test HTTP connectivity to Supabase
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get("https://trjevaajfqwleetrmncz.supabase.co")
+            results["supabase_http"] = {
+                "status": "success", 
+                "status_code": response.status_code,
+                "reachable": True
+            }
+    except Exception as e:
+        results["supabase_http"] = {"status": "failed", "error": str(e)}
+    
+    # Test external connectivity
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get("https://httpbin.org/ip")
+            ip_info = response.json()
+            results["external_connectivity"] = {
+                "status": "success",
+                "outbound_ip": ip_info.get("origin", "unknown")
+            }
+    except Exception as e:
+        results["external_connectivity"] = {"status": "failed", "error": str(e)}
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "network_tests": results
     }
