@@ -1,6 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from app.core.config import settings
 import logging
+import re
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,39 @@ _db_url = str(settings.DATABASE_URL)
 # (psycopg2) is present in the environment.
 if _db_url.startswith("postgresql://") and "+asyncpg" not in _db_url:
     _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Clean up URL parameters that are not compatible with asyncpg
+def clean_asyncpg_url(url: str) -> str:
+    """Remove URL parameters that are not compatible with asyncpg"""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    
+    # Parse query parameters
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # Remove invalid parameters for asyncpg
+    invalid_params = ['connect_timeout']
+    for param in invalid_params:
+        if param in params:
+            logger.info(f"Removing invalid asyncpg parameter: {param}")
+            del params[param]
+    
+    # Rebuild query string
+    new_query = urlencode(params, doseq=True) if params else ''
+    
+    # Rebuild URL
+    new_parsed = parsed._replace(query=new_query)
+    return urlunparse(new_parsed)
+
+# Clean the database URL
+_db_url = clean_asyncpg_url(_db_url)
+logger.info(f"Using database URL: {_db_url.split('@')[0]}@***")
+
+# For Supabase/Render connectivity, try using connection pooling port (6543)
+if "supabase.co:5432" in _db_url:
+    _db_url = _db_url.replace(":5432", ":6543")
+    logger.info("Using Supabase connection pooling on port 6543")
 
 # Create engine with better connection pool settings and timeouts
 engine = create_async_engine(
