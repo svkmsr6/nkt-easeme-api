@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 # `settings.DATABASE_URL` is a Pydantic AnyUrl. SQLAlchemy expects a string or URL object.
 # Convert to string to avoid: ArgumentError: Expected string or URL object, got AnyUrl(...)
 _db_url = str(settings.DATABASE_URL)
+
 # Ensure an async DB driver is specified for SQLAlchemy asyncio. If the URL is
 # a plain `postgresql://...` convert it to `postgresql+asyncpg://...` so the
 # asyncpg driver is used. This avoids InvalidRequestError when a sync driver
