@@ -2,35 +2,29 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.config import settings
 import logging
 import re
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
 
 # Use the DATABASE_URL directly from environment with proper parameter handling
 _db_url = str(settings.DATABASE_URL)
 
-# Handle asyncpg parameter compatibility
-try:
-    parsed = urlparse(_db_url)
-    query_params = parse_qs(parsed.query)
-    
-    # Replace connect_timeout with command_timeout for asyncpg
-    if 'connect_timeout' in query_params:
-        timeout_value = query_params.pop('connect_timeout')[0]  # Get first value
-        query_params['command_timeout'] = [timeout_value]
-        logger.info(f"Replaced connect_timeout={timeout_value} with command_timeout={timeout_value}")
-        
-        # Rebuild URL with updated parameters
-        new_query = urlencode(query_params, doseq=True)
-        _db_url = urlunparse((
-            parsed.scheme, parsed.netloc, parsed.path,
-            parsed.params, new_query, parsed.fragment
-        ))
-        logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
-    
-except Exception as e:
-    logger.warning(f"Could not parse DATABASE_URL parameters: {e}")
-    # Fallback: use original URL if parsing fails
+# Handle asyncpg parameter compatibility with simple string replacement
+# Just replace connect_timeout with command_timeout and remove problematic parameters
+if 'connect_timeout=' in _db_url:
+    _db_url = re.sub(r'connect_timeout=', 'command_timeout=', _db_url)
+    logger.info("Replaced connect_timeout with command_timeout in DATABASE_URL")
+
+# Remove problematic parameters that asyncpg doesn't support
+problematic_params = ['server_settings', 'passfile', 'channel_binding', 'gssencmode']
+for param in problematic_params:
+    if f'{param}=' in _db_url:
+        # Remove the parameter and its value (handles both &param=value and ?param=value)
+        _db_url = re.sub(rf'[&?]{param}=[^&]*', '', _db_url)
+        logger.info(f"Removed unsupported parameter: {param}")
+
+# Clean up any double & or trailing &
+_db_url = re.sub(r'&+', '&', _db_url)
+_db_url = re.sub(r'[?&]$', '', _db_url)
 
 # Simple engine configuration
 engine = create_async_engine(
