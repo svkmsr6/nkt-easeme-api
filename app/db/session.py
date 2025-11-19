@@ -10,13 +10,44 @@ logger = logging.getLogger(__name__)
 _db_url = str(settings.DATABASE_URL)
 logger.info(f"Original DATABASE_URL: {_db_url[:50]}...")  # Log first 50 chars for debugging
 
-# Parse URL properly to handle parameters correctly
+# Parse URL properly to handle parameters correctly and force IPv4 if needed
 try:
     parsed = urlparse(_db_url)
     query_params = parse_qs(parsed.query, keep_blank_values=True)
     
     # Handle parameter replacements and removals
     params_modified = False
+    hostname_modified = False
+    
+    # Try to resolve hostname to IPv4 to avoid IPv6 issues in some cloud environments
+    original_hostname = parsed.hostname
+    try:
+        import socket
+        # Try to get IPv4 address specifically
+        ipv4_addresses = []
+        try:
+            # Get all address info and filter for IPv4
+            addr_info = socket.getaddrinfo(original_hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+            ipv4_addresses = [addr[4][0] for addr in addr_info]
+        except socket.gaierror:
+            # Fallback to gethostbyname which should return IPv4
+            ipv4_addresses = [socket.gethostbyname(original_hostname)]
+        
+        if ipv4_addresses:
+            # Use the first IPv4 address found
+            ipv4_address = ipv4_addresses[0]
+            logger.info(f"Resolved {original_hostname} to IPv4: {ipv4_address}")
+            
+            # Replace hostname with IPv4 address in the URL
+            new_netloc = parsed.netloc.replace(original_hostname, ipv4_address)
+            hostname_modified = True
+        else:
+            logger.warning(f"Could not resolve {original_hostname} to IPv4, using original hostname")
+            new_netloc = parsed.netloc
+            
+    except Exception as dns_error:
+        logger.warning(f"Could not resolve hostname to IPv4: {dns_error}, using original hostname")
+        new_netloc = parsed.netloc
     
     # Replace connect_timeout with command_timeout
     if 'connect_timeout' in query_params:
@@ -40,8 +71,8 @@ try:
         else:
             query_params['command_timeout'] = [str(query_params['command_timeout'])]
     
-    # Rebuild URL only if we modified parameters
-    if params_modified:
+    # Rebuild URL if we modified parameters or hostname
+    if params_modified or hostname_modified:
         # Convert all parameter values to strings and flatten lists to single values
         clean_params = {}
         for key, value_list in query_params.items():
@@ -57,10 +88,18 @@ try:
         new_query = '&'.join(query_parts)
         
         _db_url = urlunparse((
-            parsed.scheme, parsed.netloc, parsed.path,
-            parsed.params, new_query, parsed.fragment
+            parsed.scheme, 
+            new_netloc if hostname_modified else parsed.netloc, 
+            parsed.path,
+            parsed.params, 
+            new_query, 
+            parsed.fragment
         ))
-        logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
+        
+        if hostname_modified:
+            logger.info("Updated DATABASE_URL with IPv4 address")
+        if params_modified:
+            logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
     
     logger.info(f"Final DATABASE_URL: {_db_url[:50]}...")  # Log first 50 chars for debugging
     
@@ -85,6 +124,8 @@ engine = create_async_engine(
         },
         # Add connection-level settings for better network resilience
         "ssl": "require",  # Ensure SSL is used
+        # Force IPv4 to avoid IPv6 connectivity issues in some cloud environments
+        "host": None,  # Will be overridden by URL parsing
     } if "postgresql+asyncpg" in _db_url else {}
 )
 

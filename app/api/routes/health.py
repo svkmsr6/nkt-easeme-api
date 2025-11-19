@@ -161,34 +161,73 @@ async def health_database():
     # Test TCP connectivity to database port
     try:
         import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10)
         
         # Only test TCP if DNS resolution was successful
         if result["tests"]["dns_resolution"]["status"] == "success":
             if "ip" in result["tests"]["dns_resolution"]:
-                target_ip = result["tests"]["dns_resolution"]["ip"]
+                target_ips = [result["tests"]["dns_resolution"]["ip"]]
             elif "ips" in result["tests"]["dns_resolution"]:
-                target_ip = result["tests"]["dns_resolution"]["ips"][0]
+                target_ips = result["tests"]["dns_resolution"]["ips"]
             else:
                 raise Exception("No IP address available from DNS resolution")
-                
-            result_code = sock.connect_ex((target_ip, port))
-            sock.close()
             
-            if result_code == 0:
+            # Try connecting to each IP address (IPv4 and IPv6)
+            connection_success = False
+            connection_results = []
+            
+            for target_ip in target_ips:
+                try:
+                    # Determine if this is IPv6 or IPv4
+                    if ':' in target_ip:
+                        # IPv6 address
+                        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                        addr_family = "IPv6"
+                    else:
+                        # IPv4 address
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        addr_family = "IPv4"
+                    
+                    sock.settimeout(10)
+                    result_code = sock.connect_ex((target_ip, port))
+                    sock.close()
+                    
+                    if result_code == 0:
+                        connection_success = True
+                        connection_results.append({
+                            "ip": target_ip,
+                            "family": addr_family,
+                            "status": "success",
+                            "result_code": result_code
+                        })
+                        break  # Success, no need to try other IPs
+                    else:
+                        connection_results.append({
+                            "ip": target_ip,
+                            "family": addr_family,
+                            "status": "failed",
+                            "result_code": result_code
+                        })
+                        
+                except Exception as ip_error:
+                    connection_results.append({
+                        "ip": target_ip,
+                        "family": addr_family if 'addr_family' in locals() else "unknown",
+                        "status": "error",
+                        "error": str(ip_error)
+                    })
+            
+            if connection_success:
                 result["tests"]["tcp_connectivity"] = {
-                    "status": "success", 
+                    "status": "success",
                     "port_open": True,
-                    "target_ip": target_ip
+                    "connection_results": connection_results
                 }
             else:
                 result["tests"]["tcp_connectivity"] = {
-                    "status": "failed", 
+                    "status": "failed",
                     "port_open": False,
-                    "error_code": result_code,
-                    "target_ip": target_ip,
-                    "suggestion": f"Port {port} is not accessible on {target_ip}"
+                    "connection_results": connection_results,
+                    "suggestion": f"Port {port} is not accessible on any of the resolved IP addresses"
                 }
         else:
             result["tests"]["tcp_connectivity"] = {
@@ -210,7 +249,9 @@ async def health_database():
             # Use a shorter timeout for database connection test
             import asyncio
             try:
-                async with asyncio.wait_for(engine.begin(), timeout=15.0) as conn:
+                # Fix: Use proper async context manager syntax
+                conn = await asyncio.wait_for(engine.connect(), timeout=15.0)
+                async with conn:
                     db_result = await conn.execute(text("SELECT version()"))
                     version = db_result.scalar()
                     result["tests"]["database_connection"] = {
@@ -241,6 +282,8 @@ async def health_database():
             suggestions.append("Check database credentials in DATABASE_URL")
         if "does not exist" in error_msg.lower():
             suggestions.append("Check database name in DATABASE_URL")
+        if "coroutine" in error_msg:
+            suggestions.append("Internal async handling issue - please report this error")
             
         result["tests"]["database_connection"] = {
             "status": "failed",
