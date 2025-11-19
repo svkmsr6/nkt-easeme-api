@@ -69,19 +69,22 @@ except Exception as e:
     # Fallback: use original URL if parsing fails
     logger.info(f"Using original DATABASE_URL: {_db_url[:50]}...")
 
-# Simple engine configuration with better error handling
+# Simple engine configuration with better error handling and network resilience
 engine = create_async_engine(
     _db_url,
     pool_pre_ping=True,
-    pool_recycle=3600,  # Recycle connections every hour
-    pool_timeout=30,    # Wait up to 30 seconds for a connection
-    max_overflow=10,    # Allow up to 10 connections beyond pool_size
+    pool_recycle=1800,  # Recycle connections every 30 minutes (shorter for cloud environments)
+    pool_timeout=45,    # Wait up to 45 seconds for a connection
+    max_overflow=15,    # Allow up to 15 connections beyond pool_size
+    pool_size=5,        # Default connection pool size
     echo=False,
     connect_args={
-        "command_timeout": 30,  # Set command timeout directly
+        "command_timeout": 45,  # Set command timeout directly (increased for network issues)
         "server_settings": {
             "application_name": "nkt-easeme-api",
-        }
+        },
+        # Add connection-level settings for better network resilience
+        "ssl": "require",  # Ensure SSL is used
     } if "postgresql+asyncpg" in _db_url else {}
 )
 
@@ -106,14 +109,21 @@ async def get_db():
                 return  # Success, exit the retry loop
                 
         except OSError as e:
-            if "Network is unreachable" in str(e) and attempt < max_retries - 1:
-                logger.warning(f"Network unreachable, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s...")
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-                continue
+            if "Network is unreachable" in str(e) or "Connection refused" in str(e):
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network/connection issue, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s... Error: {e}")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    logger.error(f"Database connection failed after {max_retries} attempts: {e}")
+                    raise OSError(f"Failed to connect to database after {max_retries} attempts. Last error: {e}") from e
             else:
-                logger.error(f"Database connection failed after {attempt + 1} attempts: {e}")
+                logger.error(f"Database connection failed with non-retryable OSError: {e}")
                 raise
+                
         except Exception as e:
-            logger.error(f"Database session error: {e}")
+            # For other exceptions, don't retry - they might be application-level issues
+            if attempt == 0:  # Only log once for non-OSError exceptions
+                logger.error(f"Database session error (non-retryable): {e}")
             raise

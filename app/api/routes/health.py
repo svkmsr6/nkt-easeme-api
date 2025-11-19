@@ -1,25 +1,44 @@
+'''
+Provides various levels of health checks including simple API status,
+full API and database connectivity, and detailed database tests.
+'''
+import logging
+import os
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from datetime import datetime, timezone
 from app.db.session import get_db
 from app.core.config import settings
-import logging
-import os
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
 @router.get("/health")
-async def health(db: AsyncSession = Depends(get_db)):
+async def health():
     """
-    Health check endpoint that verifies both API and database connectivity.
+    Simple health check endpoint for Render deployment checks.
+    Does not require database connectivity.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": "API is running",
+        "service": "nkt-easeme-api"
+    }
+
+@router.get("/health/full")
+async def health_full(db: AsyncSession = Depends(get_db)):
+    """
+    Comprehensive health check endpoint that verifies both API and database connectivity.
+    Use this for detailed application health monitoring.
     """
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "database": "unknown"
+        "database": "unknown",
+        "service": "nkt-easeme-api"
     }
     
     try:
@@ -82,7 +101,6 @@ async def health_debug():
 @router.get("/health/database")
 async def health_database():
     """Detailed database connectivity test"""
-    import asyncio
     from urllib.parse import urlparse
     from app.core.config import settings
     
@@ -96,7 +114,6 @@ async def health_database():
         parsed_url = urlparse(str(settings.DATABASE_URL))
         host = parsed_url.hostname
         port = parsed_url.port or 5432
-        
         result["database_config"] = {
             "host": host,
             "port": port,
@@ -105,7 +122,6 @@ async def health_database():
     except Exception as e:
         result["database_config"] = {"error": str(e)}
         return result
-    
     # Test DNS resolution for database host
     try:
         import socket
