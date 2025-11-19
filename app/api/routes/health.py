@@ -68,6 +68,7 @@ async def health_simple():
 async def health_debug():
     """Debug endpoint to check database URL configuration"""
     from app.db import session as db_session
+    from urllib.parse import urlparse
     
     # Get the original URL from settings
     original_url = str(settings.DATABASE_URL)
@@ -78,6 +79,20 @@ async def health_debug():
         engine_url = str(db_session.engine.url)
     except:
         engine_url = "Unable to retrieve engine URL"
+    
+    # Parse the original URL to show details
+    try:
+        parsed = urlparse(original_url)
+        url_details = {
+            "hostname": parsed.hostname,
+            "port": parsed.port,
+            "scheme": parsed.scheme,
+            "username": parsed.username,
+            "database": parsed.path.lstrip('/') if parsed.path else None,
+            "has_password": bool(parsed.password),
+        }
+    except Exception as e:
+        url_details = {"error": str(e)}
     
     # Mask passwords for security
     def mask_password(url):
@@ -92,6 +107,13 @@ async def health_debug():
     return {
         "original_database_url": mask_password(original_url),
         "engine_database_url": mask_password(engine_url),
+        "url_details": url_details,
+        "port_explanation": {
+            "5432": "Direct PostgreSQL connection (no connection pooling)",
+            "6543": "pgBouncer connection pooling (recommended for production)",
+            "current_port": url_details.get("port", "unknown"),
+            "recommendation": "Use 5432 for direct connection, 6543 for pooled connections"
+        },
         "app_env": settings.APP_ENV,
         "render_service": os.environ.get("RENDER_SERVICE_NAME", "unknown"),
         "render_region": os.environ.get("RENDER_REGION", "unknown"),
