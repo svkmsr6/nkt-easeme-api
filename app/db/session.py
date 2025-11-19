@@ -90,9 +90,23 @@ engine = create_async_engine(
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
+async def test_db_connection():
+    """
+    Simple database connection test that returns True/False without raising exceptions.
+    Useful for health checks where you want to test connectivity without failing the endpoint.
+    """
+    try:
+        async with SessionLocal() as session:
+            from sqlalchemy import text
+            await session.execute(text("SELECT 1"))
+            return True
+    except Exception as e:
+        logger.error(f"Database connection test failed: {e}")
+        return False
+
 async def get_db():
     """
-    Dependency that provides a database session with retry logic.
+    Dependency that provides a database session with retry logic and better error handling.
     """
     import asyncio
     
@@ -109,7 +123,14 @@ async def get_db():
                 return  # Success, exit the retry loop
                 
         except OSError as e:
-            if "Network is unreachable" in str(e) or "Connection refused" in str(e):
+            error_msg = str(e)
+            if any(error_type in error_msg for error_type in [
+                "Network is unreachable", 
+                "Connection refused", 
+                "No address associated with hostname",
+                "Temporary failure in name resolution",
+                "timeout"
+            ]):
                 if attempt < max_retries - 1:
                     logger.warning(f"Network/connection issue, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s... Error: {e}")
                     await asyncio.sleep(retry_delay)
@@ -117,13 +138,20 @@ async def get_db():
                     continue
                 else:
                     logger.error(f"Database connection failed after {max_retries} attempts: {e}")
-                    raise OSError(f"Failed to connect to database after {max_retries} attempts. Last error: {e}") from e
+                    # Provide more helpful error message for deployment
+                    deployment_error = (
+                        f"Database connection failed after {max_retries} attempts. "
+                        f"This usually indicates a network connectivity issue or incorrect database configuration. "
+                        f"Last error: {e}. "
+                        f"Check DATABASE_URL environment variable and network connectivity."
+                    )
+                    raise OSError(deployment_error) from e
             else:
                 logger.error(f"Database connection failed with non-retryable OSError: {e}")
                 raise
                 
         except Exception as e:
             # For other exceptions, don't retry - they might be application-level issues
-            if attempt == 0:  # Only log once for non-OSError exceptions
+            if attempt == 0:  # Only log once for non-Exception exceptions
                 logger.error(f"Database session error (non-retryable): {e}")
             raise
