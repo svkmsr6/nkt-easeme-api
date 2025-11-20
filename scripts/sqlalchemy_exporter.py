@@ -2,14 +2,15 @@
 """
 Export database schema using SQLAlchemy - works with your existing setup
 """
+import os
 from sqlalchemy import create_engine, MetaData, text
+from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateTable, CreateIndex
 from app.core.config import settings
-import os
 
 class SQLAlchemySchemaExporter:
     def __init__(self):
-        self.engine = create_engine(str(settings.DATABASE_URL))
+        self.engine = create_engine(str(settings.DATABASE_URL), poolclass=NullPool)
         self.metadata = MetaData()
         
     def reflect_database(self):
