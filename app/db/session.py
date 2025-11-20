@@ -2,25 +2,25 @@
 import logging
 from urllib.parse import urlparse, parse_qs, urlunparse
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Use the DATABASE_URL directly from environment with proper parameter handling
 _db_url = str(settings.DATABASE_URL)
-logger.info(f"Original DATABASE_URL: {_db_url[:50]}...")  # Log first 50 chars for debugging
+logger.info("Original DATABASE_URL: %s...", _db_url[:50])  # Log first 50 chars for debugging
 
 # Parse URL properly to handle parameters correctly and force IPv4 if needed
 try:
     parsed = urlparse(_db_url)
     query_params = parse_qs(parsed.query, keep_blank_values=True)
-    
+ 
     # Handle parameter replacements and removals
     params_modified = False
     hostname_modified = False
-    
+
     # Try to resolve hostname to IPv4 to avoid IPv6 issues in some cloud environments
     original_hostname = parsed.hostname
     try:
@@ -38,17 +38,17 @@ try:
         if ipv4_addresses:
             # Use the first IPv4 address found
             ipv4_address = ipv4_addresses[0]
-            logger.info(f"Resolved {original_hostname} to IPv4: {ipv4_address}")
+            logger.info("Resolved %s to IPv4: %s", original_hostname, ipv4_address)
             
             # Replace hostname with IPv4 address in the URL
             new_netloc = parsed.netloc.replace(original_hostname, ipv4_address)
             hostname_modified = True
         else:
-            logger.warning(f"Could not resolve {original_hostname} to IPv4, using original hostname")
+            logger.warning("Could not resolve %s to IPv4, using original hostname", original_hostname)
             new_netloc = parsed.netloc
             
     except Exception as dns_error:
-        logger.warning(f"Could not resolve hostname to IPv4: {dns_error}, using original hostname")
+        logger.warning("Could not resolve hostname to IPv4: %s, using original hostname", dns_error)
         new_netloc = parsed.netloc
     
     # Replace connect_timeout with command_timeout
@@ -56,7 +56,7 @@ try:
         timeout_value = query_params.pop('connect_timeout')[0]  # Get first value as string
         query_params['command_timeout'] = [str(timeout_value)]  # Ensure it's a string
         params_modified = True
-        logger.info(f"Replaced connect_timeout={timeout_value} with command_timeout={timeout_value}")
+        logger.info("Replaced connect_timeout=%s with command_timeout=%s", timeout_value, timeout_value)
     
     # Remove problematic parameters that asyncpg doesn't support
     problematic_params = ['server_settings', 'passfile', 'channel_binding', 'gssencmode']
@@ -64,7 +64,7 @@ try:
         if param in query_params:
             del query_params[param]
             params_modified = True
-            logger.info(f"Removed unsupported parameter: {param}")
+            logger.info("Removed unsupported parameter: %s", param)
 
     # Ensure command_timeout is a single string value, not a list
     if 'command_timeout' in query_params:
@@ -103,12 +103,12 @@ try:
         if params_modified:
             logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
 
-    logger.info(f"Final DATABASE_URL: {_db_url[:50]}...")  # Log first 50 chars for debugging
+    logger.info("Final DATABASE_URL: %s...", _db_url[:50])  # Log first 50 chars for debugging
 
 except Exception as e:
-    logger.error(f"Could not parse DATABASE_URL parameters: {e}")
+    logger.error("Could not parse DATABASE_URL parameters: %s", e)
     # Fallback: use original URL if parsing fails
-    logger.info(f"Using original DATABASE_URL: {_db_url[:50]}...")
+    logger.info("Using original DATABASE_URL: %s...", _db_url[:50])
 
 # Simple engine configuration with better error handling and network resilience
 engine = create_engine(
@@ -120,7 +120,7 @@ engine = create_engine(
     connect_args={}
 )
 
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=Session)
 
 async def test_db_connection():
     """
@@ -133,7 +133,7 @@ async def test_db_connection():
             await session.execute(text("SELECT 1"))
             return True
     except Exception as e:
-        logger.error(f"Database connection test failed: {e}")
+        logger.error("Database connection test failed: %s", e)
         return False
 
 async def get_db():
@@ -164,12 +164,12 @@ async def get_db():
                 "timeout"
             ]):
                 if attempt < max_retries - 1:
-                    logger.warning(f"Network/connection issue, attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s... Error: {e}")
+                    logger.warning("Network/connection issue, attempt %s/%s. Retrying in %ss... Error: %s", attempt + 1, max_retries, retry_delay, e)
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:
-                    logger.error(f"Database connection failed after {max_retries} attempts: {e}")
+                    logger.error("Database connection failed after %s attempts: %s", max_retries, e)
                     # Provide more helpful error message for deployment
                     deployment_error = (
                         f"Database connection failed after {max_retries} attempts. "
@@ -179,11 +179,11 @@ async def get_db():
                     )
                     raise OSError(deployment_error) from e
             else:
-                logger.error(f"Database connection failed with non-retryable OSError: {e}")
+                logger.error("Database connection failed with non-retryable OSError: %s", e)
                 raise
                 
         except Exception as e:
             # For other exceptions, don't retry - they might be application-level issues
             if attempt == 0:  # Only log once for non-Exception exceptions
-                logger.error(f"Database session error (non-retryable): {e}")
+                logger.error("Database session error (non-retryable): %s", e)
             raise
