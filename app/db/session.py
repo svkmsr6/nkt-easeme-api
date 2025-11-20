@@ -1,8 +1,9 @@
+
+import logging
+from urllib.parse import urlparse, parse_qs, urlunparse
+from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from app.core.config import settings
-import logging
-import re
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +64,14 @@ try:
             del query_params[param]
             params_modified = True
             logger.info(f"Removed unsupported parameter: {param}")
-    
+
     # Ensure command_timeout is a single string value, not a list
     if 'command_timeout' in query_params:
         if isinstance(query_params['command_timeout'], list):
             query_params['command_timeout'] = [str(query_params['command_timeout'][0])]
         else:
             query_params['command_timeout'] = [str(query_params['command_timeout'])]
-    
+
     # Rebuild URL if we modified parameters or hostname
     if params_modified or hostname_modified:
         # Convert all parameter values to strings and flatten lists to single values
@@ -80,13 +81,13 @@ try:
                 clean_params[key] = str(value_list[0])  # Take first value and ensure it's string
             else:
                 clean_params[key] = str(value_list) if value_list else ''
-        
+
         # Rebuild query string manually to avoid list issues
         query_parts = []
         for key, value in clean_params.items():
             query_parts.append(f"{key}={value}")
         new_query = '&'.join(query_parts)
-        
+
         _db_url = urlunparse((
             parsed.scheme, 
             new_netloc if hostname_modified else parsed.netloc, 
@@ -95,14 +96,14 @@ try:
             new_query, 
             parsed.fragment
         ))
-        
+
         if hostname_modified:
             logger.info("Updated DATABASE_URL with IPv4 address")
         if params_modified:
             logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
-    
+
     logger.info(f"Final DATABASE_URL: {_db_url[:50]}...")  # Log first 50 chars for debugging
-    
+
 except Exception as e:
     logger.error(f"Could not parse DATABASE_URL parameters: {e}")
     # Fallback: use original URL if parsing fails
@@ -111,6 +112,7 @@ except Exception as e:
 # Simple engine configuration with better error handling and network resilience
 engine = create_async_engine(
     _db_url,
+    poolclass=NullPool,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle connections every 30 minutes (shorter for cloud environments)
     pool_timeout=45,    # Wait up to 45 seconds for a connection
