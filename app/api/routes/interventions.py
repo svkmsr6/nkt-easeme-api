@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Path
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
 from app.api.deps import Authed
@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api/interventions", tags=["interventions"])
 
 @router.post("", response_model=InterventionOut, status_code=201)
 async def create_intervention(payload: InterventionCreate, ctx=Depends(Authed)):
-    db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
+    db: Session = ctx["db"]; user_id = ctx["user_id"]
     try:
-        task = await get_task_owned(db, user_id, payload.task_id)
+        task = get_task_owned(db, user_id, payload.task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found or doesn't belong to user")
         # AI
@@ -24,7 +24,7 @@ async def create_intervention(payload: InterventionCreate, ctx=Depends(Authed)):
             "internal_narrative": payload.internal_narrative,
             "emotion_label": payload.emotion_label,
         })
-        s = await create_session(db, user_id, task, {
+        s = create_session(db, user_id, task, {
             "physical_sensation": payload.physical_sensation,
             "internal_narrative": payload.internal_narrative,
             "emotion_label": payload.emotion_label,
@@ -48,25 +48,25 @@ async def create_intervention(payload: InterventionCreate, ctx=Depends(Authed)):
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 @router.post("/{session_id}/start", response_model=StartSessionOut)
-async def start_session(session_id: UUID = Path(...), payload: StartSessionIn | None = None, ctx=Depends(Authed)):
-    db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
-    s = await get_session_owned(db, user_id, session_id)
+def start_session(session_id: UUID = Path(...), payload: StartSessionIn | None = None, ctx=Depends(Authed)):
+    db: Session = ctx["db"]; user_id = ctx["user_id"]
+    s = get_session_owned(db, user_id, session_id)
     if not s: raise HTTPException(status_code=404, detail="Session not found or doesn't belong to user")
     started_at = payload.started_at if payload else datetime.utcnow()
-    scheduled = await mark_started_and_schedule(db, s, started_at, minutes=15)
+    scheduled = mark_started_and_schedule(db, s, started_at, minutes=15)
     return {"success": True, "scheduled_checkin_at": scheduled}
 
 @router.patch("/{session_id}/checkin-time")
-async def patch_checkin_time(session_id: UUID, payload: CheckinTimePatchIn, ctx=Depends(Authed)):
-    db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
-    s = await get_session_owned(db, user_id, session_id)
+def patch_checkin_time(session_id: UUID, payload: CheckinTimePatchIn, ctx=Depends(Authed)):
+    db: Session = ctx["db"]; user_id = ctx["user_id"]
+    s = get_session_owned(db, user_id, session_id)
     if not s: raise HTTPException(status_code=404, detail="Session not found or doesn't belong to user")
-    scheduled = await set_checkin_minutes(db, s, payload.checkin_minutes)
+    scheduled = set_checkin_minutes(db, s, payload.checkin_minutes)
     return {"scheduled_checkin_at": scheduled}
 
 @router.get("/{session_id}", response_model=InterventionDetailOut)
-async def get_detail(session_id: UUID, ctx=Depends(Authed)):
-    db: AsyncSession = ctx["db"]; user_id = ctx["user_id"]
-    s = await get_session_owned(db, user_id, session_id)
+def get_detail(session_id: UUID, ctx=Depends(Authed)):
+    db: Session = ctx["db"]; user_id = ctx["user_id"]
+    s = get_session_owned(db, user_id, session_id)
     if not s: raise HTTPException(status_code=404, detail="Session not found or doesn't belong to user")
-    return await session_detail(s)
+    return session_detail(s)

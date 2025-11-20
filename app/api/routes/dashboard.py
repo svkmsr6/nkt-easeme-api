@@ -9,19 +9,19 @@ import logging
 router = APIRouter(prefix="/api/user", tags=["user"])
 
 @router.get("/dashboard")
-async def dashboard(ctx=Depends(Authed)):
+def dashboard(ctx=Depends(Authed)):
     logger = logging.getLogger(__name__)
     db = ctx["db"]; uid = ctx["user_id"]
     
     try:
         # Use explicit casting to handle potential type mismatches
-        res = await db.execute(select(Task).where(Task.user_id==uid, cast(Task.status, String)=="active").order_by(Task.created_at.desc()).limit(10))
+        res = db.execute(select(Task).where(Task.user_id==uid, cast(Task.status, String)=="active").order_by(Task.created_at.desc()).limit(10))
         active = [{"task_id": t.id, "task_description": t.task_description, "created_at": t.created_at, "status": t.status, "last_worked_on": t.last_worked_on} for t in res.scalars()]
         
         # Try to get recent sessions with fallback handling
         sessions = []
         try:
-            sessions = await get_recent_sessions(db, uid, 5)
+            sessions = get_recent_sessions(db, uid, 5)
         except ProgrammingError as e:
             logger.warning(f"Schema mismatch in get_recent_sessions for user {uid}: {e}")
             # Continue without recent sessions data
@@ -36,7 +36,7 @@ async def dashboard(ctx=Depends(Authed)):
         # Note: in a real DB you'd compare timestamps to now(); here we simply return the soonest with no checkin logged.
         if sessions:
             try:
-                p = await get_pending_checkin(db, uid)
+                p = get_pending_checkin(db, uid)
                 if p:
                     pending = {"session_id": p.id, "task_description": p.task.task_description, "scheduled_at": p.scheduled_checkin_at}
             except Exception as e:

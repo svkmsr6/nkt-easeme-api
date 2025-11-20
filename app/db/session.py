@@ -58,7 +58,7 @@ try:
         params_modified = True
         logger.info("Replaced connect_timeout=%s with command_timeout=%s", timeout_value, timeout_value)
     
-    # Remove problematic parameters that asyncpg doesn't support
+    # Remove problematic parameters that may cause issues
     problematic_params = ['server_settings', 'passfile', 'channel_binding', 'gssencmode']
     for param in problematic_params:
         if param in query_params:
@@ -101,7 +101,7 @@ try:
         if hostname_modified:
             logger.info("Updated DATABASE_URL with IPv4 address")
         if params_modified:
-            logger.info("Updated DATABASE_URL with asyncpg compatible parameters")
+            logger.info("Updated DATABASE_URL with compatible parameters")
 
     logger.info("Final DATABASE_URL: %s...", _db_url[:50])  # Log first 50 chars for debugging
 
@@ -122,35 +122,35 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(engine, expire_on_commit=False, class_=Session)
 
-async def test_db_connection():
+def test_db_connection():
     """
     Simple database connection test that returns True/False without raising exceptions.
     Useful for health checks where you want to test connectivity without failing the endpoint.
     """
     try:
-        async with SessionLocal() as session:
+        with SessionLocal() as session:
             from sqlalchemy import text
-            await session.execute(text("SELECT 1"))
+            session.execute(text("SELECT 1"))
             return True
     except Exception as e:
         logger.error("Database connection test failed: %s", e)
         return False
 
-async def get_db():
+def get_db():
     """
     Dependency that provides a database session with retry logic and better error handling.
     """
-    import asyncio
+    import time
     
     max_retries = 3
     retry_delay = 1  # seconds
     
     for attempt in range(max_retries):
         try:
-            async with SessionLocal() as session:
+            with SessionLocal() as session:
                 # Set the search_path to use the app schema by default
                 from sqlalchemy import text
-                await session.execute(text("SET search_path TO app, public"))
+                session.execute(text("SET search_path TO app, public"))
                 yield session
                 return  # Success, exit the retry loop
                 
@@ -165,7 +165,7 @@ async def get_db():
             ]):
                 if attempt < max_retries - 1:
                     logger.warning("Network/connection issue, attempt %s/%s. Retrying in %ss... Error: %s", attempt + 1, max_retries, retry_delay, e)
-                    await asyncio.sleep(retry_delay)
+                    time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
                 else:

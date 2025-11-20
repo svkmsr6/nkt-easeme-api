@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.db.session import get_db
 from app.core.config import settings
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
 @router.get("/health")
-async def health():
+def health():
     """
     Simple health check endpoint for Render deployment checks.
     Does not require database connectivity.
@@ -29,7 +29,7 @@ async def health():
     }
 
 @router.get("/health/full")
-async def health_full(db: AsyncSession = Depends(get_db)):
+def health_full(db: Session = Depends(get_db)):
     """
     Comprehensive health check endpoint that verifies both API and database connectivity.
     Use this for detailed application health monitoring.
@@ -43,7 +43,7 @@ async def health_full(db: AsyncSession = Depends(get_db)):
     
     try:
         # Test database connection
-        result = await db.execute(text("SELECT 1"))
+        result = db.execute(text("SELECT 1"))
         result.scalar()
         health_status["database"] = "connected"
         logger.info("Database health check successful")
@@ -56,7 +56,7 @@ async def health_full(db: AsyncSession = Depends(get_db)):
     return health_status
 
 @router.get("/health/simple")
-async def health_simple():
+def health_simple():
     """Simple health check without database dependency"""
     return {
         "status": "healthy",

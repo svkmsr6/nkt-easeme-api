@@ -1,24 +1,24 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select, cast, String
 from app.db.models import Task
 from uuid import UUID
 
-async def create_task(db: AsyncSession, user_id: UUID, description: str) -> Task:
+def create_task(db: Session, user_id: UUID, description: str) -> Task:
     t = Task(user_id=user_id, task_description=description)
     db.add(t)
-    await db.commit()
-    await db.refresh(t)
+    db.commit()
+    db.refresh(t)
     return t
 
-async def get_task_owned(db: AsyncSession, user_id: UUID, task_id: UUID) -> Task | None:
-    res = await db.execute(select(Task).where(Task.id == task_id, Task.user_id == user_id))
+def get_task_owned(db: Session, user_id: UUID, task_id: UUID) -> Task | None:
+    res = db.execute(select(Task).where(Task.id == task_id, Task.user_id == user_id))
     return res.scalar_one_or_none()
 
-async def list_tasks(db: AsyncSession, user_id: UUID, status: str | None, limit: int = 20):
+def list_tasks(db: Session, user_id: UUID, status: str | None, limit: int = 20):
     stmt = select(Task).where(Task.user_id == user_id)
     if status:
         # Use explicit casting to handle potential type mismatches
         stmt = stmt.where(cast(Task.status, String) == cast(status, String))
     stmt = stmt.order_by(Task.created_at.desc()).limit(limit)
-    res = await db.execute(stmt)
+    res = db.execute(stmt)
     return list(res.scalars())

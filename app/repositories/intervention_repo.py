@@ -1,10 +1,10 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.db.models import InterventionSession, Task
 from uuid import UUID
 from datetime import datetime, timedelta
 
-async def create_session(db: AsyncSession, user_id: UUID, task: Task, payload: dict) -> InterventionSession:
+def create_session(db: Session, user_id: UUID, task: Task, payload: dict) -> InterventionSession:
     s = InterventionSession(
         user_id=user_id,
         task_id=task.id,
@@ -16,10 +16,10 @@ async def create_session(db: AsyncSession, user_id: UUID, task: Task, payload: d
         personalized_message=payload["personalized_message"],
         intervention_duration_seconds=payload["duration_seconds"],
     )
-    db.add(s); await db.commit(); await db.refresh(s)
+    db.add(s); db.commit(); db.refresh(s)
     return s
 
-async def get_session_owned(db: AsyncSession, user_id: UUID, session_id: UUID) -> InterventionSession | None:
+def get_session_owned(db: Session, user_id: UUID, session_id: UUID) -> InterventionSession | None:
     from sqlalchemy.orm import joinedload, selectinload
     
     q = (
@@ -27,24 +27,24 @@ async def get_session_owned(db: AsyncSession, user_id: UUID, session_id: UUID) -
         .options(joinedload(InterventionSession.task), selectinload(InterventionSession.checkins))
         .where(InterventionSession.id==session_id, InterventionSession.user_id==user_id)
     )
-    res = await db.execute(q)
+    res = db.execute(q)
     return res.unique().scalar_one_or_none()
 
-async def mark_started_and_schedule(db: AsyncSession, session: InterventionSession, started_at: datetime, minutes: int = 15):
+def mark_started_and_schedule(db: Session, session: InterventionSession, started_at: datetime, minutes: int = 15):
     # Strip timezone info since DB columns are TIMESTAMP WITHOUT TIME ZONE
     started_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
     session.intervention_started_at = started_naive
     session.scheduled_checkin_at = started_naive + timedelta(minutes=minutes)
-    await db.commit(); await db.refresh(session)
+    db.commit(); db.refresh(session)
     return session.scheduled_checkin_at
 
-async def set_checkin_minutes(db: AsyncSession, session: InterventionSession, minutes: int):
+def set_checkin_minutes(db: Session, session: InterventionSession, minutes: int):
     base = session.intervention_started_at or session.created_at
     session.scheduled_checkin_at = base + timedelta(minutes=minutes)
-    await db.commit(); await db.refresh(session)
+    db.commit(); db.refresh(session)
     return session.scheduled_checkin_at
 
-async def get_recent_sessions(db: AsyncSession, user_id: UUID, limit: int = 5):
+def get_recent_sessions(db: Session, user_id: UUID, limit: int = 5):
     from sqlalchemy.orm import joinedload
     
     q = (
@@ -54,10 +54,10 @@ async def get_recent_sessions(db: AsyncSession, user_id: UUID, limit: int = 5):
         .order_by(InterventionSession.created_at.desc())
         .limit(limit)
     )
-    res = await db.execute(q)
+    res = db.execute(q)
     return list(res.scalars())
 
-async def get_pending_checkin(db: AsyncSession, user_id: UUID):
+def get_pending_checkin(db: Session, user_id: UUID):
     q = (
         select(InterventionSession)
         .where(
@@ -67,7 +67,7 @@ async def get_pending_checkin(db: AsyncSession, user_id: UUID):
         )
         .order_by(InterventionSession.scheduled_checkin_at.asc())
     )
-    res = await db.execute(q)
+    res = db.execute(q)
     sessions = list(res.scalars())
     
     # Check if any session has no checkins
@@ -76,7 +76,7 @@ async def get_pending_checkin(db: AsyncSession, user_id: UUID):
             return s
     return None
 
-async def session_detail(s: InterventionSession):
+def session_detail(s: InterventionSession):
     chk = None
     if s.checkins:
         ci = s.checkins[-1]
