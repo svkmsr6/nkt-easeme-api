@@ -16,11 +16,10 @@ from app.db.models import InterventionSession, Task, CheckIn
 class TestCreateSession:
     """Test create_session function with mocked database."""
     
-    @pytest.mark.asyncio
-    async def test_create_session_success(self):
+    def test_create_session_success(self):
         """Test creating an intervention session with mocked DB."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         task = Mock(spec=Task)
         task.id = uuid.uuid4()
@@ -36,7 +35,7 @@ class TestCreateSession:
         }
         
         # Execute
-        session = await create_session(db_mock, user_id, task, payload)
+        session = create_session(db_mock, user_id, task, payload)
         
         # Verify
         assert session.user_id == user_id
@@ -51,18 +50,17 @@ class TestCreateSession:
         
         # Verify DB operations
         db_mock.add.assert_called_once()
-        db_mock.commit.assert_awaited_once()
-        db_mock.refresh.assert_awaited_once()
+        db_mock.commit.assert_called_once()
+        db_mock.refresh.assert_called_once()
 
 
 class TestGetSessionOwned:
     """Test get_session_owned function with mocked database."""
     
-    @pytest.mark.asyncio
-    async def test_get_existing_session(self):
+    def test_get_existing_session(self):
         """Test getting an existing session."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         session_id = uuid.uuid4()
         
@@ -73,30 +71,29 @@ class TestGetSessionOwned:
         result_mock = Mock()
         result_mock.unique = Mock(return_value=result_mock)
         result_mock.scalar_one_or_none = Mock(return_value=mock_session)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_session_owned(db_mock, user_id, session_id)
+        result = get_session_owned(db_mock, user_id, session_id)
         
         # Verify
         assert result == mock_session
-        db_mock.execute.assert_awaited_once()
+        db_mock.execute.assert_called_once()
     
-    @pytest.mark.asyncio
-    async def test_get_nonexistent_session(self):
+    def test_get_nonexistent_session(self):
         """Test getting a session that doesn't exist."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         session_id = uuid.uuid4()
         
         result_mock = Mock()
         result_mock.unique = Mock(return_value=result_mock)
         result_mock.scalar_one_or_none = Mock(return_value=None)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_session_owned(db_mock, user_id, session_id)
+        result = get_session_owned(db_mock, user_id, session_id)
         
         # Verify
         assert result is None
@@ -105,36 +102,34 @@ class TestGetSessionOwned:
 class TestMarkStartedAndSchedule:
     """Test mark_started_and_schedule function."""
     
-    @pytest.mark.asyncio
-    async def test_mark_started_with_timezone_aware_datetime(self):
+    def test_mark_started_with_timezone_aware_datetime(self):
         """Test marking session as started with timezone-aware datetime."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         session = Mock(spec=InterventionSession)
         started_at = datetime.now(timezone.utc)
         minutes = 20
         
         # Execute
-        result = await mark_started_and_schedule(db_mock, session, started_at, minutes)
+        result = mark_started_and_schedule(db_mock, session, started_at, minutes)
         
         # Verify
         assert session.intervention_started_at is not None
         assert session.intervention_started_at.tzinfo is None  # Should strip timezone
         assert session.scheduled_checkin_at is not None
-        db_mock.commit.assert_awaited_once()
-        db_mock.refresh.assert_awaited_once()
+        db_mock.commit.assert_called_once()
+        db_mock.refresh.assert_called_once()
     
-    @pytest.mark.asyncio
-    async def test_mark_started_with_naive_datetime(self):
+    def test_mark_started_with_naive_datetime(self):
         """Test marking session as started with naive datetime."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         session = Mock(spec=InterventionSession)
         started_at = datetime.now()  # Naive datetime
         minutes = 15
         
         # Execute
-        result = await mark_started_and_schedule(db_mock, session, started_at, minutes)
+        result = mark_started_and_schedule(db_mock, session, started_at, minutes)
         
         # Verify
         assert session.intervention_started_at == started_at
@@ -144,11 +139,10 @@ class TestMarkStartedAndSchedule:
 class TestSetCheckinMinutes:
     """Test set_checkin_minutes function."""
     
-    @pytest.mark.asyncio
-    async def test_set_checkin_minutes_with_started_at(self):
+    def test_set_checkin_minutes_with_started_at(self):
         """Test setting checkin minutes when intervention_started_at is set."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         session = Mock(spec=InterventionSession)
         started_at = datetime.now()
         session.intervention_started_at = started_at
@@ -156,18 +150,17 @@ class TestSetCheckinMinutes:
         minutes = 30
         
         # Execute
-        result = await set_checkin_minutes(db_mock, session, minutes)
+        result = set_checkin_minutes(db_mock, session, minutes)
         
         # Verify
         assert session.scheduled_checkin_at == started_at + timedelta(minutes=30)
-        db_mock.commit.assert_awaited_once()
-        db_mock.refresh.assert_awaited_once()
+        db_mock.commit.assert_called_once()
+        db_mock.refresh.assert_called_once()
     
-    @pytest.mark.asyncio
-    async def test_set_checkin_minutes_without_started_at(self):
+    def test_set_checkin_minutes_without_started_at(self):
         """Test setting checkin minutes when intervention_started_at is None."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         session = Mock(spec=InterventionSession)
         session.intervention_started_at = None
         created_at = datetime.now()
@@ -175,7 +168,7 @@ class TestSetCheckinMinutes:
         minutes = 25
         
         # Execute
-        result = await set_checkin_minutes(db_mock, session, minutes)
+        result = set_checkin_minutes(db_mock, session, minutes)
         
         # Verify
         assert session.scheduled_checkin_at == created_at + timedelta(minutes=25)
@@ -184,41 +177,39 @@ class TestSetCheckinMinutes:
 class TestGetRecentSessions:
     """Test get_recent_sessions function."""
     
-    @pytest.mark.asyncio
-    async def test_get_recent_sessions_default_limit(self):
+    def test_get_recent_sessions_default_limit(self):
         """Test getting recent sessions with default limit."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         
         mock_sessions = [Mock(spec=InterventionSession) for _ in range(3)]
         
         result_mock = Mock()
         result_mock.scalars = Mock(return_value=mock_sessions)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_recent_sessions(db_mock, user_id)
+        result = get_recent_sessions(db_mock, user_id)
         
         # Verify
         assert len(result) == 3
-        db_mock.execute.assert_awaited_once()
+        db_mock.execute.assert_called_once()
     
-    @pytest.mark.asyncio
-    async def test_get_recent_sessions_custom_limit(self):
+    def test_get_recent_sessions_custom_limit(self):
         """Test getting recent sessions with custom limit."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         
         mock_sessions = [Mock(spec=InterventionSession) for _ in range(10)]
         
         result_mock = Mock()
         result_mock.scalars = Mock(return_value=mock_sessions)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_recent_sessions(db_mock, user_id, limit=10)
+        result = get_recent_sessions(db_mock, user_id, limit=10)
         
         # Verify
         assert len(result) == 10
@@ -227,11 +218,10 @@ class TestGetRecentSessions:
 class TestGetPendingCheckin:
     """Test get_pending_checkin function."""
     
-    @pytest.mark.asyncio
-    async def test_get_pending_checkin_with_no_checkins(self):
+    def test_get_pending_checkin_with_no_checkins(self):
         """Test getting pending checkin when session has no checkins."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         
         mock_session = Mock(spec=InterventionSession)
@@ -240,19 +230,18 @@ class TestGetPendingCheckin:
         
         result_mock = Mock()
         result_mock.scalars = Mock(return_value=[mock_session])
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_pending_checkin(db_mock, user_id)
+        result = get_pending_checkin(db_mock, user_id)
         
         # Verify
         assert result == mock_session
     
-    @pytest.mark.asyncio
-    async def test_get_pending_checkin_all_have_checkins(self):
+    def test_get_pending_checkin_all_have_checkins(self):
         """Test getting pending checkin when all sessions have checkins."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         
         mock_session = Mock(spec=InterventionSession)
@@ -261,27 +250,26 @@ class TestGetPendingCheckin:
         
         result_mock = Mock()
         result_mock.scalars = Mock(return_value=[mock_session])
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_pending_checkin(db_mock, user_id)
+        result = get_pending_checkin(db_mock, user_id)
         
         # Verify
         assert result is None
     
-    @pytest.mark.asyncio
-    async def test_get_pending_checkin_no_sessions(self):
+    def test_get_pending_checkin_no_sessions(self):
         """Test getting pending checkin when no sessions exist."""
         # Setup
-        db_mock = AsyncMock()
+        db_mock = Mock()
         user_id = uuid.uuid4()
         
         result_mock = Mock()
         result_mock.scalars = Mock(return_value=[])
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = Mock(return_value=result_mock)
         
         # Execute
-        result = await get_pending_checkin(db_mock, user_id)
+        result = get_pending_checkin(db_mock, user_id)
         
         # Verify
         assert result is None
@@ -290,8 +278,7 @@ class TestGetPendingCheckin:
 class TestSessionDetail:
     """Test session_detail function."""
     
-    @pytest.mark.asyncio
-    async def test_session_detail_with_checkin(self):
+    def test_session_detail_with_checkin(self):
         """Test session detail when checkin exists."""
         # Setup
         mock_task = Mock(spec=Task)
@@ -315,7 +302,7 @@ class TestSessionDetail:
         mock_session.checkins = [mock_checkin]
         
         # Execute
-        result = await session_detail(mock_session)
+        result = session_detail(mock_session)
         
         # Verify
         assert result["session_id"] == mock_session.id
@@ -329,8 +316,7 @@ class TestSessionDetail:
         assert result["checkin"] is not None
         assert result["checkin"]["outcome"] == "started_kept_going"
     
-    @pytest.mark.asyncio
-    async def test_session_detail_without_checkin(self):
+    def test_session_detail_without_checkin(self):
         """Test session detail when no checkin exists."""
         # Setup
         mock_task = Mock(spec=Task)
@@ -350,7 +336,7 @@ class TestSessionDetail:
         mock_session.checkins = []
         
         # Execute
-        result = await session_detail(mock_session)
+        result = session_detail(mock_session)
         
         # Verify
         assert result["session_id"] == mock_session.id

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient, ASGITransport
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
@@ -122,6 +123,42 @@ async def client(db_session, test_user_id) -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def sync_client(test_user_id) -> Generator[TestClient, None, None]:
+    """Create synchronous test client for non-AI routes."""
+    from app.db.session import get_db
+    from unittest.mock import Mock, patch
+    
+    app = create_app()
+    
+    # Mock database dependency with proper query responses
+    def override_get_db():
+        mock_db = Mock()
+        # Mock the execute method to return proper scalars
+        mock_result = Mock()
+        mock_result.scalars.return_value = []  # Empty list for tasks
+        mock_db.execute.return_value = mock_result
+        yield mock_db
+    
+    # Mock auth dependency for testing
+    def override_auth_sync():
+        return {"user_id": str(test_user_id), "role": "authenticated"}
+    
+    from app.core.security import get_current_user
+    
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_auth_sync
+    
+    # Mock the repository functions directly
+    with patch('app.repositories.intervention_repo.get_recent_sessions', return_value=[]), \
+         patch('app.repositories.intervention_repo.get_pending_checkin', return_value=None):
+        
+        with TestClient(app) as client:
+            yield client
     
     app.dependency_overrides.clear()
 

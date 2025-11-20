@@ -92,29 +92,277 @@ curl -s -X POST "https://<PROJECT>.supabase.co/auth/v1/token" \
 
 Response contains `access_token` (the JWT).
 
-## Endpoints
+## API Endpoints & CURL Examples
 
-### Health Check
-- `GET /health`
+All endpoints (except `/health`) require authentication via Supabase JWT token in the Authorization header.
+
+### Authentication Header
+```bash
+# Set your JWT token as an environment variable for convenience
+export JWT_TOKEN="your_supabase_jwt_token_here"
+```
+
+---
 
 ### Task Management
-- `POST /api/tasks`
-- `GET /api/tasks?status=active&limit=20`
+
+#### Create a Task
+```bash
+curl -X POST "http://localhost:8000/api/tasks" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_description": "Complete the quarterly report presentation"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_description": "Complete the quarterly report presentation",
+  "created_at": "2024-01-15T10:30:00Z",
+  "last_worked_on": null,
+  "status": "active"
+}
+```
+
+#### List Tasks
+```bash
+# Get all active tasks (default)
+curl -X GET "http://localhost:8000/api/tasks" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+
+# Get tasks with specific status
+curl -X GET "http://localhost:8000/api/tasks?status=active&limit=10" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+
+# Available status values: active, completed, abandoned
+```
+
+**Response (200 OK):**
+```json
+{
+  "tasks": [
+    {
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "task_description": "Complete the quarterly report presentation",
+      "created_at": "2024-01-15T10:30:00Z",
+      "last_worked_on": "2024-01-15T14:20:00Z",
+      "status": "active"
+    }
+  ]
+}
+```
+
+---
 
 ### Interventions
-- `POST /api/interventions`
-- `POST /api/interventions/{session_id}/start`
-- `PATCH /api/interventions/{session_id}/checkin-time`
-- `GET /api/interventions/{session_id}`
+
+#### Create an Intervention Session
+```bash
+curl -X POST "http://localhost:8000/api/interventions" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "550e8400-e29b-41d4-a716-446655440000",
+    "physical_sensation": "Tension in shoulders and jaw",
+    "internal_narrative": "I feel overwhelmed and worried about meeting the deadline",
+    "emotion_label": "anxiety"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "session_id": "123e4567-e89b-12d3-a456-426614174000",
+  "ai_identified_pattern": "performance_anxiety_with_physical_tension",
+  "technique_id": "breathing_and_grounding",
+  "personalized_message": "I notice you're experiencing tension in your shoulders and worry about deadlines. Let's try a breathing technique to help you feel more grounded.",
+  "intervention_duration_seconds": 180
+}
+```
+
+#### Start an Intervention Session
+```bash
+curl -X POST "http://localhost:8000/api/interventions/123e4567-e89b-12d3-a456-426614174000/start" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "started_at": "2024-01-15T15:00:00Z"
+  }'
+
+# Or start immediately (started_at is optional)
+curl -X POST "http://localhost:8000/api/interventions/123e4567-e89b-12d3-a456-426614174000/start" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "scheduled_checkin_at": "2024-01-15T15:15:00Z"
+}
+```
+
+#### Update Check-in Time
+```bash
+curl -X PATCH "http://localhost:8000/api/interventions/123e4567-e89b-12d3-a456-426614174000/checkin-time" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkin_minutes": 30
+  }'
+```
+
+**Response (200 OK):**
+```json
+{
+  "scheduled_checkin_at": "2024-01-15T15:30:00Z"
+}
+```
+*Note: `checkin_minutes` must be between 15 and 120.*
+
+#### Get Intervention Details
+```bash
+curl -X GET "http://localhost:8000/api/interventions/123e4567-e89b-12d3-a456-426614174000" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+```
+
+**Response (200 OK):**
+```json
+{
+  "session_id": "123e4567-e89b-12d3-a456-426614174000",
+  "task": {
+    "task_id": "550e8400-e29b-41d4-a716-446655440000",
+    "task_description": "Complete the quarterly report presentation"
+  },
+  "physical_sensation": "Tension in shoulders and jaw",
+  "internal_narrative": "I feel overwhelmed and worried about meeting the deadline",
+  "emotion_label": "anxiety",
+  "technique_id": "breathing_and_grounding",
+  "personalized_message": "I notice you're experiencing tension in your shoulders and worry about deadlines. Let's try a breathing technique to help you feel more grounded.",
+  "created_at": "2024-01-15T14:30:00Z",
+  "scheduled_checkin_at": "2024-01-15T15:00:00Z",
+  "checkin": null
+}
+```
+
+---
 
 ### Check-ins
-- `POST /api/checkins`
+
+#### Create a Check-in
+```bash
+curl -X POST "http://localhost:8000/api/checkins" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "123e4567-e89b-12d3-a456-426614174000",
+    "outcome": "started_kept_going",
+    "optional_notes": "The breathing exercise really helped calm my nerves",
+    "emotion_after": "calm"
+  }'
+```
+
+**Valid outcome values:**
+- `started_kept_going` - Started the intervention and continued
+- `started_stopped` - Started but stopped partway through
+- `did_not_start` - Never started the intervention
+- `still_working` - Still working on the intervention
+
+**Response (201 Created):**
+```json
+{
+  "checkin_id": "987fcdeb-51a2-43d1-9f4e-123456789abc",
+  "created_at": "2024-01-15T15:30:00Z",
+  "suggestion": "Great work completing the breathing exercise! Consider using this technique again when you notice similar physical tension."
+}
+```
+
+---
 
 ### User Dashboard
-- `GET /api/user/dashboard`
 
-### AI Emotion Labels
-- `POST /api/ai/emotion-labels`
+#### Get Dashboard Data
+```bash
+curl -X GET "http://localhost:8000/api/user/dashboard" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+```
+
+**Response (200 OK):**
+```json
+{
+  "active_tasks": [
+    {
+      "task_id": "550e8400-e29b-41d4-a716-446655440000",
+      "task_description": "Complete the quarterly report presentation",
+      "created_at": "2024-01-15T10:30:00Z",
+      "status": "active",
+      "last_worked_on": "2024-01-15T14:20:00Z"
+    }
+  ],
+  "recent_sessions": [
+    {
+      "session_id": "123e4567-e89b-12d3-a456-426614174000",
+      "task_description": "Complete the quarterly report presentation",
+      "created_at": "2024-01-15T14:30:00Z",
+      "technique_id": "breathing_and_grounding"
+    }
+  ],
+  "pending_checkin": {
+    "session_id": "123e4567-e89b-12d3-a456-426614174000",
+    "task_description": "Complete the quarterly report presentation",
+    "scheduled_at": "2024-01-15T15:00:00Z"
+  }
+}
+```
+
+---
+
+### AI Services
+
+#### Get Emotion Label Suggestions
+```bash
+curl -X POST "http://localhost:8000/api/ai/emotion-labels" \
+  -H "Authorization: Bearer $JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_description": "Complete the quarterly report presentation",
+    "physical_sensation": "Tension in shoulders and jaw",
+    "internal_narrative": "I feel overwhelmed and worried about meeting the deadline"
+  }'
+```
+
+**Response (200 OK):**
+```json
+{
+  "emotion_options": [
+    "anxiety",
+    "overwhelm",
+    "stress",
+    "worry",
+    "pressure"
+  ]
+}
+```
+
+---
+
+### Health Check (No Authentication Required)
+```bash
+curl -X GET "http://localhost:8000/health"
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T15:30:00Z",
+  "message": "API is running",
+  "service": "nkt-easeme-api"
+}
+```
 
 ## Notes
 

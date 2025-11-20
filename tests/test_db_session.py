@@ -17,22 +17,21 @@ class TestSession:
         """Test that engine is created."""
         assert engine is not None
     
-    @pytest.mark.asyncio
-    async def test_get_db_generator(self):
-        """Test that get_db is an async generator."""
+    def test_get_db_generator(self):
+        """Test that get_db is a generator."""
         db_gen = get_db()
         
-        # Verify it's an async generator
-        assert hasattr(db_gen, '__anext__')
+        # Verify it's a generator
+        assert hasattr(db_gen, '__next__')
         
         # Get session
-        session = await db_gen.__anext__()
+        session = next(db_gen)
         
         # Verify it's a session
         assert session is not None
         
         # Close properly
         try:
-            await db_gen.__anext__()
-        except StopAsyncIteration:
+            next(db_gen)
+        except StopIteration:
             pass  # Expected when generator finishes
