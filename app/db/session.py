@@ -1,8 +1,9 @@
 
 import logging
 from urllib.parse import urlparse, parse_qs, urlunparse
-from sqlalchemy import NullPool
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -110,25 +111,13 @@ except Exception as e:
     logger.info(f"Using original DATABASE_URL: {_db_url[:50]}...")
 
 # Simple engine configuration with better error handling and network resilience
-engine = create_async_engine(
+engine = create_engine(
     _db_url,
     poolclass=NullPool,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle connections every 30 minutes (shorter for cloud environments)
-    pool_timeout=45,    # Wait up to 45 seconds for a connection
-    max_overflow=15,    # Allow up to 15 connections beyond pool_size
-    pool_size=5,        # Default connection pool size
     echo=False,
-    connect_args={
-        "command_timeout": 45,  # Set command timeout directly (increased for network issues)
-        "server_settings": {
-            "application_name": "nkt-easeme-api",
-        },
-        # Add connection-level settings for better network resilience
-        "ssl": "require",  # Ensure SSL is used
-        # Force IPv4 to avoid IPv6 connectivity issues in some cloud environments
-        "host": None,  # Will be overridden by URL parsing
-    } if "postgresql+asyncpg" in _db_url else {}
+    connect_args={}
 )
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
